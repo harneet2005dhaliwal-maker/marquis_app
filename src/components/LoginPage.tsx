@@ -1,0 +1,411 @@
+import React, { useState } from "react";
+import { Button } from "./ui/button";
+import { Input } from "./ui/input";
+import { motion } from "motion/react";
+// import marquisLogo from "../assets/logo.png";
+const marquisLogo = "https://placeholder.com/260x100?text=MARQUIS";
+
+interface LoginPageProps {
+  onLogin: (studentId: string, role: "student" | "parent") => void;
+}
+
+export function LoginPage({ onLogin }: LoginPageProps) {
+  const [activeTab, setActiveTab] = useState<"student" | "parent">("student");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  const handleGoogleLogin = () => {
+  // Use Vite proxy so it works regardless of backend host
+  window.location.href = "/auth/google/login";
+};
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+
+    try {
+      const res = await fetch("http://localhost:4000/api/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include", // ✅ important (so backend session cookie is set)
+        body: JSON.stringify({
+          email: username.trim(),
+          password,
+          role: activeTab, // optional (backend can ignore for now)
+        }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setError(data.message || "Invalid email or password");
+        return;
+      }
+
+      const data = await res.json();
+      onLogin(data.studentId, data.role);
+    } catch (err) {
+      console.error("Login error:", err);
+      setError("Unable to reach server. Please try again.");
+    }
+  };
+
+  return (
+    <div
+      className="min-h-screen flex items-center justify-center p-6"
+      style={{
+        background:
+          "radial-gradient(circle at top, #FFF9EB 0%, #FFFCF4 50%, #FFFFFF 100%)",
+      }}
+    >
+      <div className="w-full max-w-[440px] flex flex-col items-center">
+        {/* Marquis Logo */}
+        <motion.div
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+          className="flex flex-col items-center"
+        >
+          <img
+            src={marquisLogo}
+            alt="MARQUIS"
+            style={{
+              width: "260px",
+              height: "auto",
+              filter: "drop-shadow(0px 4px 12px rgba(0,0,0,0.06))",
+            }}
+          />
+          <p
+            style={{
+              fontFamily: "Inter, -apple-system, sans-serif",
+              fontSize: "15px",
+              fontWeight: 500,
+              color: "#666666",
+              marginTop: "20px",
+              textAlign: "center",
+              letterSpacing: "0.01em",
+            }}
+          >
+            Powered by Care, Driven by Results.
+          </p>
+        </motion.div>
+
+        {/* Login Card */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.1, ease: [0.16, 1, 0.3, 1] }}
+          className="w-full"
+          style={{
+            background: "#FFFFFF",
+            borderRadius: "24px",
+            padding: "40px",
+            marginTop: "48px",
+            boxShadow:
+              "0 8px 32px rgba(0, 0, 0, 0.08), 0 2px 8px rgba(0, 0, 0, 0.04)",
+            border: "1px solid #E5E5E5",
+          }}
+        >
+          {/* Primary Google Login */}
+          <Button
+            type="button"
+            className="w-full"
+            onClick={handleGoogleLogin}
+            style={{
+              background: "#111111",
+              color: "#FFFFFF",
+              fontFamily: "Inter, -apple-system, sans-serif",
+              fontSize: "16px",
+              fontWeight: 700,
+              padding: "16px",
+              height: "56px",
+              borderRadius: "14px",
+              border: "none",
+              cursor: "pointer",
+              transition: "all 200ms ease",
+              boxShadow: "0 4px 12px rgba(0,0,0,0.20)",
+            }}
+          >
+            Continue with Google
+          </Button>
+
+          {/* Divider */}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "12px",
+              marginTop: "22px",
+              marginBottom: "22px",
+            }}
+          >
+            <div style={{ height: "1px", background: "#EAEAEA", flex: 1 }} />
+            <span
+              style={{
+                fontFamily: "Inter, -apple-system, sans-serif",
+                fontSize: "12px",
+                fontWeight: 600,
+                color: "#9A9A9A",
+                letterSpacing: "0.04em",
+                textTransform: "uppercase",
+              }}
+            >
+              Or continue with email
+            </span>
+            <div style={{ height: "1px", background: "#EAEAEA", flex: 1 }} />
+          </div>
+
+          {/* Segmented Control Tab Selector */}
+          <div
+            className="flex gap-0 p-1.5"
+            style={{
+              background: "#F5F5F5",
+              borderRadius: "16px",
+              marginBottom: "32px",
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => setActiveTab("student")}
+              className="flex-1 rounded-xl transition-all flex items-center justify-center"
+              style={{
+                background: activeTab === "student" ? "#F8D548" : "transparent",
+                color: activeTab === "student" ? "#000000" : "#999999",
+                fontFamily: "Inter, -apple-system, sans-serif",
+                fontSize: "15px",
+                fontWeight: activeTab === "student" ? 700 : 500,
+                border: "none",
+                cursor: "pointer",
+                transition: "all 200ms ease",
+                borderRadius: "13px",
+                padding: "14px 20px",
+                height: "48px",
+              }}
+            >
+              Student Login
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab("parent")}
+              className="flex-1 rounded-xl transition-all flex items-center justify-center"
+              style={{
+                background: activeTab === "parent" ? "#F8D548" : "transparent",
+                color: activeTab === "parent" ? "#000000" : "#999999",
+                fontFamily: "Inter, -apple-system, sans-serif",
+                fontSize: "15px",
+                fontWeight: activeTab === "parent" ? 700 : 500,
+                border: "none",
+                cursor: "pointer",
+                transition: "all 200ms ease",
+                borderRadius: "13px",
+                padding: "14px 20px",
+                height: "48px",
+              }}
+            >
+              Parent Portal
+            </button>
+          </div>
+
+          {/* Login Form (secondary) */}
+          <form onSubmit={handleLogin} className="space-y-5">
+            {/* Email Field */}
+            <div>
+              <label
+                style={{
+                  fontFamily: "Inter, -apple-system, sans-serif",
+                  fontSize: "14px",
+                  fontWeight: 600,
+                  color: "#000000",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  marginBottom: "16px",
+                }}
+              >
+                Email Address
+                <span
+                  style={{
+                    fontSize: "10px",
+                    fontWeight: 600,
+                    color: "#4CAF50",
+                    background: "rgba(76, 175, 80, 0.1)",
+                    padding: "3px 8px",
+                    borderRadius: "6px",
+                    letterSpacing: "0.02em",
+                  }}
+                >
+                  Linked to Marquis Email
+                </span>
+              </label>
+              <Input
+                type="email"
+                placeholder="your.name@marquis.education"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                style={{
+                  fontFamily: "Inter, -apple-system, sans-serif",
+                  fontSize: "15px",
+                  padding: "16px 18px",
+                  height: "56px",
+                  borderRadius: "12px",
+                  border: "1px solid #E5E5E5",
+                  background: "#FFFFFF",
+                  boxShadow: "inset 0 1px 3px rgba(0, 0, 0, 0.04)",
+                  transition: "all 150ms ease",
+                }}
+                className="focus:border-[#F8D548] focus:ring-2 focus:ring-[#F8D548]/20"
+              />
+            </div>
+
+            {/* Password Field */}
+            <div style={{ marginTop: "20px" }}>
+              <label
+                style={{
+                  fontFamily: "Inter, -apple-system, sans-serif",
+                  fontSize: "14px",
+                  fontWeight: 600,
+                  color: "#000000",
+                  display: "block",
+                  marginBottom: "16px",
+                }}
+              >
+                Password
+              </label>
+              <Input
+                type="password"
+                placeholder="Enter your password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                style={{
+                  fontFamily: "Inter, -apple-system, sans-serif",
+                  fontSize: "15px",
+                  padding: "16px 18px",
+                  height: "56px",
+                  borderRadius: "12px",
+                  border: "1px solid #E5E5E5",
+                  background: "#FFFFFF",
+                  boxShadow: "inset 0 1px 3px rgba(0, 0, 0, 0.04)",
+                  transition: "all 150ms ease",
+                }}
+                className="focus:border-[#F8D548] focus:ring-2 focus:ring-[#F8D548]/20"
+              />
+            </div>
+
+            {/* CTA Button */}
+            <Button
+              type="submit"
+              className="w-full"
+              style={{
+                background: "#F8D548",
+                color: "#000000",
+                fontFamily: "Inter, -apple-system, sans-serif",
+                fontSize: "16px",
+                fontWeight: 700,
+                padding: "16px",
+                height: "56px",
+                marginTop: "32px",
+                borderRadius: "14px",
+                border: "none",
+                cursor: "pointer",
+                transition: "all 200ms ease",
+                boxShadow:
+                  "0 4px 12px rgba(248, 213, 72, 0.3), 0 2px 4px rgba(0, 0, 0, 0.1)",
+              }}
+              onMouseEnter={(e: React.MouseEvent<HTMLButtonElement>) => {
+                e.currentTarget.style.transform = "translateY(-2px)";
+                e.currentTarget.style.boxShadow =
+                  "0 6px 16px rgba(248, 213, 72, 0.4), 0 4px 8px rgba(0, 0, 0, 0.12)";
+              }}
+              onMouseLeave={(e: React.MouseEvent<HTMLButtonElement>) => {
+                e.currentTarget.style.transform = "translateY(0)";
+                e.currentTarget.style.boxShadow =
+                  "0 4px 12px rgba(248, 213, 72, 0.3), 0 2px 4px rgba(0, 0, 0, 0.1)";
+              }}
+            >
+              {activeTab === "student" ? "Access My Learning" : "Access Portal"}
+            </Button>
+          </form>
+
+          {error && (
+            <p
+              style={{
+                marginTop: "12px",
+                color: "#D32F2F",
+                fontSize: "13px",
+                fontFamily: "Inter, -apple-system, sans-serif",
+                textAlign: "center",
+              }}
+            >
+              {error}
+            </p>
+          )}
+
+          {/* Forgot Password Link */}
+          <div className="text-center" style={{ marginTop: "24px" }}>
+            <button
+              type="button"
+              style={{
+                fontFamily: "Inter, -apple-system, sans-serif",
+                fontSize: "13px",
+                fontWeight: 500,
+                color: "#666666",
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                textDecoration: "none",
+                transition: "color 150ms ease",
+              }}
+              onMouseEnter={(e: React.MouseEvent<HTMLButtonElement>) => {
+                e.currentTarget.style.color = "#000000";
+                e.currentTarget.style.textDecoration = "underline";
+              }}
+              onMouseLeave={(e: React.MouseEvent<HTMLButtonElement>) => {
+                e.currentTarget.style.color = "#666666";
+                e.currentTarget.style.textDecoration = "none";
+              }}
+            >
+              Forgot password?
+            </button>
+          </div>
+        </motion.div>
+
+        {/* Bottom Contact Text */}
+        <motion.p
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.5, delay: 0.3 }}
+          style={{
+            fontFamily: "Inter, -apple-system, sans-serif",
+            fontSize: "13px",
+            color: "#999999",
+            marginTop: "32px",
+            textAlign: "center",
+            lineHeight: 1.6,
+          }}
+        >
+          Need help? Contact{" "}
+          <a
+            href="mailto:hi@marquis.education"
+            style={{
+              color: "#F8D548",
+              fontWeight: 600,
+              textDecoration: "none",
+              transition: "color 150ms ease",
+            }}
+            onMouseEnter={(e: React.MouseEvent<HTMLAnchorElement>) => {
+              e.currentTarget.style.color = "#000000";
+              e.currentTarget.style.textDecoration = "underline";
+            }}
+            onMouseLeave={(e: React.MouseEvent<HTMLAnchorElement>) => {
+              e.currentTarget.style.color = "#F8D548";
+              e.currentTarget.style.textDecoration = "none";
+            }}
+          >
+            hi@marquis.education
+          </a>
+        </motion.p>
+      </div>
+    </div>
+  );
+}
+
