@@ -1,641 +1,612 @@
-import { useState } from "react";
-import { Card } from "./ui/card";
-import { Button } from "./ui/button";
-import { AIStudyPlanPage } from "./AIStudyPlanPage";
-import { PlanetDistribution } from "./PlanetDistribution";
-import { 
-  Sparkles, Target, TrendingUp, Calendar, BookOpen, 
-  Zap, Clock, Award, Activity, Brain, 
-  ChevronRight, RotateCw, Lightbulb
+import { useEffect, useMemo, useState } from "react";
+import {
+  AlertCircle,
+  ArrowLeft,
+  BookOpen,
+  Calendar,
+  CheckCircle2,
+  Clock,
+  Sparkles,
+  Target,
+  TrendingUp,
 } from "lucide-react";
-import { motion, AnimatePresence } from "motion/react";
-import { Progress } from "./ui/progress";
+import { motion } from "motion/react";
+
+import { AIStudyPlanPage } from "./AIStudyPlanPage";
 import { Badge } from "./ui/badge";
-import { Separator } from "./ui/separator";
+import { Button } from "./ui/button";
+import { Card } from "./ui/card";
+import { Progress } from "./ui/progress";
 
-interface Goal {
-  id: number;
-  title: string;
-  description: string;
-  targetDate: string;
-  category: string;
-  completed: boolean;
-  progress: number;
-  projectedCompletion?: string;
-  focusIntensity?: number;
-  daysAhead?: number;
-}
+import { useAuth } from "../contexts/AuthContext";
+import { supabase } from "../lib/supabase";
 
-interface JournalInsight {
-  id: number;
-  date: string;
-  summary: string;
-  mood: string;
-  pattern?: string;
-  accuracyGain?: number;
-}
-
-// Mock data
-const mockGoals: Goal[] = [
-  {
-    id: 1,
-    title: "Master Algebra",
-    description: "Complete all algebra units with 90% accuracy",
-    targetDate: "2025-12-15",
-    category: "Mathematics",
-    completed: false,
-    progress: 75,
-    projectedCompletion: "Week 6",
-    focusIntensity: 80,
-    daysAhead: 2,
-  },
-  {
-    id: 2,
-    title: "Read 5 Books",
-    description: "Finish 5 classic literature books",
-    targetDate: "2025-11-30",
-    category: "English",
-    completed: false,
-    progress: 60,
-    projectedCompletion: "Week 4",
-    focusIntensity: 65,
-    daysAhead: -1,
-  },
-  {
-    id: 3,
-    title: "Geometry Mastery",
-    description: "Achieve 85%+ in all geometry topics",
-    targetDate: "2025-12-01",
-    category: "Mathematics",
-    completed: false,
-    progress: 45,
-    projectedCompletion: "Week 5",
-    focusIntensity: 70,
-    daysAhead: 0,
-  },
-];
-
-const mockJournalInsights: JournalInsight[] = [
-  {
-    id: 1,
-    date: "This week",
-    summary: "You've completed 3 focus sessions this week — overall mood: calm & productive.",
-    mood: "calm",
-    pattern: "Mondays = highest focus",
-    accuracyGain: 7,
-  },
-  {
-    id: 2,
-    date: "Last 7 days",
-    summary: "Your accuracy improved by 7%, mostly in algebraic simplification.",
-    mood: "productive",
-    accuracyGain: 7,
-  },
-  {
-    id: 3,
-    date: "Pattern detected",
-    summary: "Geometry sessions shorter than average — consider 2 shorter cycles.",
-    mood: "neutral",
-    pattern: "Geometry sessions shorter",
-  },
-];
-
-const weeklyFocusData = [
-  { subject: "Algebra", percentage: 40, color: "#6366F1" },
-  { subject: "Geometry", percentage: 25, color: "#A78BFA" },
-  { subject: "English", percentage: 20, color: "#C7D2FE" },
-  { subject: "Other", percentage: 15, color: "#E0E7FF" },
-];
+import {
+  getGoogleClassroomCourses,
+  getGoogleClassroomCoursework,
+  getMyGoogleClassroomSubmissions,
+  type GoogleClassroomCourse,
+  type GoogleClassroomCourseWork,
+  type GoogleClassroomSubmission,
+} from "../services/googleClassroom";
 
 interface AIInsightsPageProps {
+  onBack?: () => void;
   onNavigateToFocus?: () => void;
 }
 
-export function AIInsightsPage({ onNavigateToFocus }: AIInsightsPageProps) {
-  const [isGeneratingPlan, setIsGeneratingPlan] = useState(false);
-  const [showReflectionPrompt, setShowReflectionPrompt] = useState(false);
-  const [selectedGoal, setSelectedGoal] = useState<number | null>(null);
+type ClassroomWorkItem = GoogleClassroomCourseWork & {
+  courseName: string;
+  submission?: GoogleClassroomSubmission;
+};
+
+interface SchoolAssessment {
+  id: string;
+  student_id: string;
+  subject: string;
+  title: string;
+  assessment_type: string;
+  due_at: string;
+  weighting: number | null;
+  difficulty: number | null;
+  confidence: number | null;
+  notes: string | null;
+}
+
+function getDueDate(work: GoogleClassroomCourseWork): Date | null {
+  if (!work.dueDate) return null;
+
+  return new Date(
+    work.dueDate.year,
+    work.dueDate.month - 1,
+    work.dueDate.day,
+    work.dueTime?.hours ?? 23,
+    work.dueTime?.minutes ?? 59
+  );
+}
+
+function isSubmitted(work: ClassroomWorkItem) {
+  return (
+    work.submission?.state === "TURNED_IN" ||
+    work.submission?.state === "RETURNED"
+  );
+}
+
+function getPercent(work: ClassroomWorkItem) {
+  const grade = work.submission?.assignedGrade;
+  const maxPoints = work.maxPoints;
+
+  if (
+    typeof grade !== "number" ||
+    typeof maxPoints !== "number" ||
+    maxPoints <= 0
+  ) {
+    return null;
+  }
+
+  return (grade / maxPoints) * 100;
+}
+
+function daysUntil(date: Date) {
+  const today = new Date();
+  const start = new Date(
+    today.getFullYear(),
+    today.getMonth(),
+    today.getDate()
+  );
+
+  const target = new Date(
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate()
+  );
+
+  return Math.ceil(
+    (target.getTime() - start.getTime()) /
+      (1000 * 60 * 60 * 24)
+  );
+}
+
+export function AIInsightsPage({
+  onBack,
+  onNavigateToFocus,
+}: AIInsightsPageProps) {
+  const { googleProviderToken, studentId } = useAuth();
+
   const [showStudyPlan, setShowStudyPlan] = useState(false);
-  const [goals, setMockGoals] = useState(mockGoals);
+  const [courses, setCourses] = useState<GoogleClassroomCourse[]>([]);
+  const [work, setWork] = useState<ClassroomWorkItem[]>([]);
+  const [schoolAssessments, setSchoolAssessments] =
+    useState<SchoolAssessment[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleGeneratePlan = () => {
-    setIsGeneratingPlan(true);
-    setTimeout(() => {
-      setIsGeneratingPlan(false);
-      setShowStudyPlan(true);
-    }, 2000);
-  };
+  useEffect(() => {
+    const load = async () => {
+      if (!googleProviderToken) return;
 
-  // If showing study plan, render that instead
+      setLoading(true);
+      setError(null);
+
+      try {
+        const liveCourses =
+          await getGoogleClassroomCourses(googleProviderToken);
+
+        setCourses(liveCourses);
+
+        const all = await Promise.all(
+          liveCourses.map(async (course) => {
+            const [coursework, submissions] = await Promise.all([
+              getGoogleClassroomCoursework(
+                course.id,
+                googleProviderToken
+              ),
+              getMyGoogleClassroomSubmissions(
+                course.id,
+                googleProviderToken
+              ),
+            ]);
+
+            return coursework.map(
+              (item): ClassroomWorkItem => ({
+                ...item,
+                courseName: course.name,
+                submission: submissions.find(
+                  (submission) =>
+                    submission.courseWorkId === item.id
+                ),
+              })
+            );
+          })
+        );
+
+        setWork(all.flat());
+      } catch (err) {
+        console.error("Insights load failed:", err);
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Unable to load Classroom insights."
+        );
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    void load();
+  }, [googleProviderToken]);
+
+  useEffect(() => {
+    const loadSchoolAssessments = async () => {
+      if (!studentId) {
+        setSchoolAssessments([]);
+        return;
+      }
+
+      const { data, error: assessmentError } = await supabase
+        .from("school_assessments")
+        .select(
+          "id, student_id, subject, title, assessment_type, due_at, weighting, difficulty, confidence, notes"
+        )
+        .eq("student_id", studentId)
+        .gte("due_at", new Date().toISOString())
+        .order("due_at", { ascending: true });
+
+      if (assessmentError) {
+        console.error(
+          "Insights school assessments failed:",
+          assessmentError
+        );
+        return;
+      }
+
+      setSchoolAssessments((data ?? []) as SchoolAssessment[]);
+    };
+
+    void loadSchoolAssessments();
+  }, [studentId]);
+
+  const insights = useMemo(() => {
+    const now = new Date();
+
+    const incomplete = work.filter(
+      (item) => !isSubmitted(item)
+    );
+
+    const withDueDates = incomplete.filter(
+      (item) => getDueDate(item) !== null
+    );
+
+    const overdue = withDueDates.filter(
+      (item) => getDueDate(item)! < now
+    );
+
+    const upcoming = withDueDates
+      .filter((item) => getDueDate(item)! >= now)
+      .sort(
+        (a, b) =>
+          getDueDate(a)!.getTime() -
+          getDueDate(b)!.getTime()
+      );
+
+    const dueSevenDays = upcoming.filter(
+      (item) => daysUntil(getDueDate(item)!) <= 7
+    );
+
+    const courseStats = courses
+      .map((course) => {
+        const items = work.filter(
+          (item) => item.courseId === course.id
+        );
+
+        if (items.length === 0) return null;
+
+        const done = items.filter(isSubmitted).length;
+        const percentages = items
+          .map(getPercent)
+          .filter((value): value is number => value !== null);
+
+        return {
+          id: course.id,
+          name: course.name,
+          completion:
+            items.length > 0
+              ? (done / items.length) * 100
+              : 0,
+          average:
+            percentages.length > 0
+              ? percentages.reduce((a, b) => a + b, 0) /
+                percentages.length
+              : null,
+          pending: items.length - done,
+        };
+      })
+      .filter(
+        (
+          value
+        ): value is {
+          id: string;
+          name: string;
+          completion: number;
+          average: number | null;
+          pending: number;
+        } => value !== null
+      );
+
+    const weakest = courseStats
+      .filter((course) => course.average !== null)
+      .slice()
+      .sort(
+        (a, b) =>
+          (a.average ?? 100) - (b.average ?? 100)
+      )[0];
+
+    const busiest = courseStats
+      .slice()
+      .sort((a, b) => b.pending - a.pending)[0];
+
+    const upcomingSchoolAssessments = schoolAssessments
+      .filter((assessment) => new Date(assessment.due_at) >= now)
+      .sort(
+        (a, b) =>
+          new Date(a.due_at).getTime() -
+          new Date(b.due_at).getTime()
+      );
+
+    return {
+      incomplete,
+      overdue,
+      upcoming,
+      dueSevenDays,
+      courseStats,
+      weakest,
+      busiest,
+      upcomingSchoolAssessments,
+    };
+  }, [courses, work, schoolAssessments]);
+
   if (showStudyPlan) {
-    return <AIStudyPlanPage onBack={() => setShowStudyPlan(false)} onStartSession={onNavigateToFocus} />;
+    return (
+      <AIStudyPlanPage
+        onBack={() => setShowStudyPlan(false)}
+        onStartSession={onNavigateToFocus}
+      />
+    );
   }
 
   return (
-    <div className="flex flex-col gap-16 pb-12">
-      {/* AI Summary Panel */}
-      <motion.div
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4 }}
-        className="space-y-6"
-      >
-        {/* Enhanced Section Header with Orbital Animation */}
-        <div className="pt-10 pb-6 relative">
-          {/* Orbiting icon animation */}
-          <motion.div
-            className="absolute -left-1 top-10"
-            animate={{
-              rotate: 360,
-            }}
-            transition={{
-              duration: 20,
-              repeat: Infinity,
-              ease: "linear",
-            }}
-          >
-            <Sparkles className="w-4 h-4 text-primary/40 stroke-[1.5]" />
-          </motion.div>
-          
-          <p 
-            className="text-sm tracking-[0.08em] text-foreground-secondary uppercase" 
-            style={{ fontWeight: 500, fontSize: '14px', letterSpacing: '0.08em' }}
-          >
-            ✨ WEEKLY ORBIT SUMMARY
-          </p>
-          
-          {/* Soft divider */}
-          <div 
-            className="mt-4 h-px w-full" 
-            style={{ background: 'rgba(0, 0, 0, 0.06)' }}
-          />
-        </div>
-        
-        <Card 
-          className="relative overflow-hidden border-0"
-          style={{ 
-            borderRadius: '24px',
-            background: 'linear-gradient(180deg, #FFFFFF 0%, #FAFAFF 100%)',
-            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.05)',
-          }}
+    <div className="min-h-screen pb-24 px-6 pt-6"
+      style={{
+        background:
+          "linear-gradient(to bottom, #FFF9EB 0%, #FFFFFF 55%, #FFF7D9 100%)",
+      }}
+    >
+      {onBack && (
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onBack}
+          className="-ml-2 mb-4"
         >
-          {/* Orbital rings background pattern */}
-          <div 
-            className="absolute inset-0 opacity-[0.02] pointer-events-none"
-            style={{
-              backgroundImage: `radial-gradient(circle at 50% 50%, transparent 30%, rgba(99, 102, 241, 0.1) 30%, rgba(99, 102, 241, 0.1) 31%, transparent 31%, transparent 50%, rgba(99, 102, 241, 0.1) 50%, rgba(99, 102, 241, 0.1) 51%, transparent 51%)`,
-              backgroundSize: '200px 200px',
-            }}
-          />
+          <ArrowLeft className="w-4 h-4 mr-2" />
+          Back to Progress
+        </Button>
+      )}
 
-          {/* Glow effect */}
-          <motion.div
-            className="absolute inset-0 opacity-0 pointer-events-none"
-            animate={{
-              opacity: [0, 0.03, 0],
-            }}
-            transition={{
-              duration: 3,
-              repeat: Infinity,
-              ease: "easeInOut",
-            }}
-            style={{
-              background: 'radial-gradient(circle at center, rgba(99, 102, 241, 0.15), transparent 70%)',
-            }}
-          />
-
-          <div className="relative z-10 space-y-6 p-6">
-            {/* AI-generated headline with accent bar */}
-            <div className="flex items-start gap-4">
-              {/* Vertical accent line */}
-              <motion.div
-                className="w-1 h-20 rounded-full flex-shrink-0"
-                style={{ 
-                  background: 'linear-gradient(180deg, #6366F1 0%, #A78BFA 100%)',
-                }}
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: 80, opacity: 1 }}
-                transition={{ duration: 0.6, delay: 0.2 }}
-              />
-              
-              <div className="flex-1">
-                <h3 
-                  className="mb-3 text-foreground" 
-                  style={{ 
-                    color: '#1A1A1A',
-                    lineHeight: '1.6',
-                  }}
-                >
-                  This week's orbit shows rising momentum
-                </h3>
-                <p 
-                  className="text-sm text-foreground-secondary leading-relaxed" 
-                  style={{ opacity: 0.85 }}
-                >
-                  Algebra mastery is approaching 90% accuracy. Your consistency has improved for 3 consecutive weeks.
-                </p>
-              </div>
-            </div>
-
-            <Separator />
-
-            {/* Orbit Distribution Chart - moved higher with reduced spacing */}
-            <div style={{ marginTop: '-8px', marginBottom: '-16px' }}>
-              <PlanetDistribution 
-                selectedGoal={selectedGoal}
-                setSelectedGoal={setSelectedGoal}
-              />
-            </div>
-
-            <Separator />
-
-            {/* AI Summary Text */}
-            <div className="space-y-3 bg-background/60 rounded-lg p-4 border border-border/50">
-              <div className="flex items-center gap-2">
-                <Brain className="w-4 h-4 text-primary stroke-[1.5]" />
-                <p className="text-xs text-foreground-tertiary uppercase tracking-wider">
-                  AI Analysis
-                </p>
-              </div>
-              <p className="text-sm text-foreground-secondary leading-relaxed">
-                Keep reinforcing Geometry — accuracy gain of <span className="text-primary font-medium">+8%</span> predicted next orbit. Your focus intensity remains in the optimal zone.
-              </p>
-            </div>
-
-            {/* Action buttons */}
-            <AnimatePresence mode="wait">
-              {isGeneratingPlan ? (
-                <motion.div
-                  key="generating"
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.95 }}
-                  className="flex flex-col items-center justify-center py-8 gap-4"
-                >
-                  <motion.div
-                    animate={{ rotate: 360 }}
-                    transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
-                  >
-                    <Sparkles className="w-8 h-8 text-primary stroke-[1.5]" />
-                  </motion.div>
-                  <div className="text-center">
-                    <p className="text-sm text-foreground mb-1">Analyzing your progress...</p>
-                    <p className="text-xs text-foreground-secondary">
-                      Creating personalized study schedule
-                    </p>
-                  </div>
-                  <div className="flex gap-1">
-                    {[0, 1, 2].map((i) => (
-                      <motion.div
-                        key={i}
-                        className="w-2 h-2 rounded-full bg-primary"
-                        animate={{
-                          scale: [1, 1.5, 1],
-                          opacity: [0.5, 1, 0.5],
-                        }}
-                        transition={{
-                          duration: 1.5,
-                          repeat: Infinity,
-                          delay: i * 0.2,
-                        }}
-                      />
-                    ))}
-                  </div>
-                </motion.div>
-              ) : (
-                <motion.div
-                  key="buttons"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                >
-                  <Button 
-                    variant="default" 
-                    className="w-full"
-                    onClick={handleGeneratePlan}
-                  >
-                    <Sparkles className="w-4 h-4 mr-2 stroke-[1.5]" />
-                    Generate Study Plan
-                  </Button>
-                </motion.div>
-              )}
-            </AnimatePresence>
+      <div className="space-y-5">
+        <motion.div
+          initial={{ opacity: 0, y: -12 }}
+          animate={{ opacity: 1, y: 0 }}
+        >
+          <div className="flex items-center gap-2 mb-2">
+            <Sparkles className="w-5 h-5 text-[#C59F00]" />
+            <h1 className="m-0 text-2xl font-bold">
+              Marquis Insights
+            </h1>
           </div>
-        </Card>
-      </motion.div>
+          <p className="m-0 text-sm text-[#595959]">
+            Generated from your current Google Classroom workload
+          </p>
+        </motion.div>
 
-      {/* Goal Tracker Grid */}
-      <motion.div
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4, delay: 0.2 }}
-        className="space-y-6"
-      >
-        <p className="section-label">🎯 ACTIVE GOALS</p>
-
-        <div className="space-y-4">
-          {goals.map((goal, index) => (
-            <motion.div
-              key={goal.id}
-              initial={{ opacity: 0, x: -10 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: 0.3 + index * 0.1 }}
+        {!googleProviderToken ? (
+          <Card className="p-5">
+            Sign in with Google to generate live insights.
+          </Card>
+        ) : loading ? (
+          <Card className="p-5 flex items-center gap-3">
+            <Clock className="w-5 h-5" />
+            Loading your academic picture...
+          </Card>
+        ) : error ? (
+          <Card className="p-5 text-red-700">
+            {error}
+          </Card>
+        ) : (
+          <>
+            <Card
+              className="border-0 p-6"
+              style={{
+                borderRadius: "22px",
+                boxShadow:
+                  "0 8px 26px rgba(0,0,0,.06)",
+              }}
             >
-              <Card 
-                className={`card-minimal cursor-pointer transition-all ${
-                  selectedGoal === goal.id ? 'ring-2 ring-primary ring-offset-2' : ''
-                }`}
-                onClick={() => setSelectedGoal(selectedGoal === goal.id ? null : goal.id)}
-              >
-                <div className="space-y-4">
-                  {/* Header */}
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-1">
-                        <h4 className="mb-0 text-foreground">{goal.title}</h4>
-                        <Badge variant="outline" className="text-xs">
-                          {goal.category}
-                        </Badge>
-                      </div>
-                      <p className="text-xs text-foreground-secondary">
-                        {goal.description}
+              <div className="flex items-start gap-4">
+                <div
+                  className="w-1 h-20 rounded-full shrink-0"
+                  style={{
+                    background:
+                      "linear-gradient(180deg,#FFD500,#A78BFA)",
+                  }}
+                />
+
+                <div>
+                  <h2 className="m-0 text-lg font-bold">
+                    Your current workload
+                  </h2>
+                  <p className="mt-3 mb-0 text-sm text-[#595959] leading-relaxed">
+                    You currently have{" "}
+                    <strong>{insights.incomplete.length}</strong>{" "}
+                    incomplete Classroom tasks.
+                    {insights.overdue.length > 0
+                      ? ` ${insights.overdue.length} are overdue.`
+                      : " Nothing is currently overdue."}
+                    {insights.dueSevenDays.length > 0
+                      ? ` ${insights.dueSevenDays.length} are due within the next 7 days.`
+                      : ""}
+                    {insights.upcomingSchoolAssessments.length > 0
+                      ? ` You have also added ${insights.upcomingSchoolAssessments.length} upcoming school assessment(s).`
+                      : ""}
+                  </p>
+                </div>
+              </div>
+            </Card>
+
+            <div className="grid grid-cols-3 gap-3">
+              <Summary
+                label="Overdue"
+                value={insights.overdue.length}
+                icon={<AlertCircle className="w-5 h-5" />}
+              />
+              <Summary
+                label="Due 7 Days"
+                value={insights.dueSevenDays.length}
+                icon={<Calendar className="w-5 h-5" />}
+              />
+              <Summary
+                label="School"
+                value={insights.upcomingSchoolAssessments.length}
+                icon={<BookOpen className="w-5 h-5" />}
+              />
+            </div>
+
+            <div className="space-y-3">
+              <p className="text-xs font-bold tracking-wider text-[#666]">
+                LIVE PRIORITIES
+              </p>
+
+              {insights.overdue.length > 0 && (
+                <InsightCard
+                  icon={<AlertCircle className="w-5 h-5" />}
+                  title="Clear overdue work first"
+                  text={`${insights.overdue.length} incomplete ${
+                    insights.overdue.length === 1
+                      ? "task is"
+                      : "tasks are"
+                  } already past the due date.`}
+                />
+              )}
+
+              {insights.upcoming[0] && (
+                <InsightCard
+                  icon={<Calendar className="w-5 h-5" />}
+                  title="Closest deadline"
+                  text={`${insights.upcoming[0].courseName}: ${
+                    insights.upcoming[0].title
+                  } is due in ${Math.max(
+                    0,
+                    daysUntil(getDueDate(insights.upcoming[0])!)
+                  )} day(s).`}
+                />
+              )}
+
+              {insights.upcomingSchoolAssessments[0] && (
+                <InsightCard
+                  icon={<Calendar className="w-5 h-5" />}
+                  title="Next school assessment"
+                  text={`${insights.upcomingSchoolAssessments[0].subject}: ${insights.upcomingSchoolAssessments[0].title} is due in ${Math.max(
+                    0,
+                    daysUntil(
+                      new Date(
+                        insights.upcomingSchoolAssessments[0].due_at
+                      )
+                    )
+                  )} day(s)${
+                    insights.upcomingSchoolAssessments[0].weighting !== null
+                      ? ` and is worth ${insights.upcomingSchoolAssessments[0].weighting}%`
+                      : ""
+                  }.`}
+                />
+              )}
+
+              {insights.weakest && (
+                <InsightCard
+                  icon={<TrendingUp className="w-5 h-5" />}
+                  title="Lowest graded average"
+                  text={`${insights.weakest.name} currently has the lowest available graded average at ${Math.round(
+                    insights.weakest.average!
+                  )}%.`}
+                />
+              )}
+
+              {insights.busiest && (
+                <InsightCard
+                  icon={<Target className="w-5 h-5" />}
+                  title="Highest workload"
+                  text={`${insights.busiest.name} has ${insights.busiest.pending} incomplete task(s) in the current Classroom data.`}
+                />
+              )}
+
+              {insights.incomplete.length === 0 && (
+                <InsightCard
+                  icon={<CheckCircle2 className="w-5 h-5" />}
+                  title="You're clear"
+                  text="No incomplete Classroom work is currently visible."
+                />
+              )}
+            </div>
+
+            <div className="space-y-3">
+              <p className="text-xs font-bold tracking-wider text-[#666]">
+                CLASS OVERVIEW
+              </p>
+
+              {insights.courseStats.map((course) => (
+                <Card
+                  key={course.id}
+                  className="p-4 border border-black/5"
+                  style={{ borderRadius: "16px" }}
+                >
+                  <div className="flex justify-between gap-4 mb-3">
+                    <div>
+                      <h3 className="m-0 text-sm font-bold">
+                        {course.name}
+                      </h3>
+                      <p className="m-0 mt-1 text-xs text-[#595959]">
+                        {course.pending} incomplete
                       </p>
                     </div>
-                    <motion.div
-                      animate={{ rotate: selectedGoal === goal.id ? 90 : 0 }}
-                      transition={{ duration: 0.2 }}
-                    >
-                      <ChevronRight className="w-4 h-4 text-foreground-tertiary stroke-[1.5]" />
-                    </motion.div>
-                  </div>
 
-                  {/* Progress bar */}
-                  <div className="space-y-2">
-                    <div className="flex justify-between text-xs">
-                      <span className="text-foreground-secondary">{goal.progress}% complete</span>
-                      <span className="text-foreground-tertiary">Target: {goal.targetDate}</span>
+                    <div className="text-right">
+                      <p className="m-0 font-extrabold">
+                        {course.average === null
+                          ? "—"
+                          : `${Math.round(course.average)}%`}
+                      </p>
+                      <p className="m-0 text-[10px] text-[#777]">
+                        graded average
+                      </p>
                     </div>
-                    <Progress value={goal.progress} className="h-2" />
                   </div>
 
-                  {/* Status blurbs */}
-                  <div className="flex flex-wrap gap-2">
-                    {goal.projectedCompletion && (
-                      <div className="flex items-center gap-1.5 bg-primary/10 px-2 py-1 rounded-md">
-                        <Calendar className="w-3 h-3 text-primary stroke-[1.5]" />
-                        <span className="text-xs text-foreground-secondary">
-                          Projected: {goal.projectedCompletion}
-                          {goal.daysAhead && goal.daysAhead > 0 && (
-                            <span className="text-primary ml-1">
-                              (ahead by {goal.daysAhead}d)
-                            </span>
-                          )}
-                        </span>
-                      </div>
-                    )}
-                    {goal.focusIntensity && (
-                      <div className="flex items-center gap-1.5 bg-background/80 px-2 py-1 rounded-md border border-border/50">
-                        <Activity className="w-3 h-3 text-foreground-secondary stroke-[1.5]" />
-                        <span className="text-xs text-foreground-secondary">
-                          Focus intensity {goal.focusIntensity}%
-                        </span>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Expanded details */}
-                  <AnimatePresence>
-                    {selectedGoal === goal.id && (
-                      <motion.div
-                        initial={{ height: 0, opacity: 0 }}
-                        animate={{ height: 'auto', opacity: 1 }}
-                        exit={{ height: 0, opacity: 0 }}
-                        transition={{ duration: 0.2 }}
-                        className="overflow-hidden"
-                      >
-                        <Separator className="my-4" />
-                        <div className="space-y-6">
-                          {/* Progress Update Slider */}
-                          <div className="space-y-3">
-                            <div className="flex items-center justify-between">
-                              <p className="text-xs text-foreground-tertiary uppercase tracking-wider">
-                                Update Progress
-                              </p>
-                              <Badge variant="outline" className="text-xs">
-                                {goal.progress}%
-                              </Badge>
-                            </div>
-                            <div className="space-y-2">
-                              <input
-                                type="range"
-                                min="0"
-                                max="100"
-                                value={goal.progress}
-                                onChange={(e) => {
-                                  const newProgress = parseInt(e.target.value);
-                                  setMockGoals(prev => prev.map(g => 
-                                    g.id === goal.id ? { ...g, progress: newProgress } : g
-                                  ));
-                                }}
-                                className="w-full h-2 bg-border rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary [&::-webkit-slider-thumb]:cursor-pointer [&::-webkit-slider-thumb]:shadow-md [&::-moz-range-thumb]:w-4 [&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:bg-primary [&::-moz-range-thumb]:cursor-pointer [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:shadow-md"
-                                style={{
-                                  background: `linear-gradient(to right, #6366F1 0%, #6366F1 ${goal.progress}%, #E5E7EB ${goal.progress}%, #E5E7EB 100%)`
-                                }}
-                              />
-                              <div className="flex justify-between text-xs text-foreground-tertiary">
-                                <span>0%</span>
-                                <span>25%</span>
-                                <span>50%</span>
-                                <span>75%</span>
-                                <span>100%</span>
-                              </div>
-                            </div>
-                          </div>
-
-                          <Separator />
-
-                          <div className="space-y-3">
-                            <p className="text-xs text-foreground-tertiary uppercase tracking-wider">
-                              Progress Orbit
-                            </p>
-                            {/* Mini orbit visualization */}
-                            <div className="flex items-center justify-center py-4">
-                              <div className="relative w-32 h-32">
-                                {/* Central goal */}
-                                <div 
-                                  className="absolute top-1/2 left-1/2 w-10 h-10 rounded-full bg-primary/20 border-2 border-primary flex items-center justify-center"
-                                  style={{ transform: 'translate(-50%, -50%)' }}
-                                >
-                                  <Target className="w-4 h-4 text-primary stroke-[1.5]" />
-                                </div>
-                                {/* Progress arc */}
-                                <svg className="absolute inset-0 w-full h-full -rotate-90">
-                                  <circle
-                                    cx="64"
-                                    cy="64"
-                                    r="50"
-                                    fill="none"
-                                    stroke="#E5E7EB"
-                                    strokeWidth="6"
-                                  />
-                                  <motion.circle
-                                    cx="64"
-                                    cy="64"
-                                    r="50"
-                                    fill="none"
-                                    stroke="#6366F1"
-                                    strokeWidth="6"
-                                    strokeLinecap="round"
-                                    initial={{ strokeDashoffset: 314 }}
-                                    animate={{ 
-                                      strokeDashoffset: 314 - (314 * goal.progress / 100),
-                                    }}
-                                    transition={{ duration: 1, delay: 0.2 }}
-                                    style={{
-                                      strokeDasharray: 314,
-                                      filter: 'drop-shadow(0 0 4px rgba(99, 102, 241, 0.5))',
-                                    }}
-                                  />
-                                </svg>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </div>
-              </Card>
-            </motion.div>
-          ))}
-        </div>
-      </motion.div>
-
-      {/* AI Journal Feed */}
-      <motion.div
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4, delay: 0.3 }}
-        className="space-y-6"
-      >
-        <p className="section-label">📔 JOURNAL HIGHLIGHTS</p>
-
-        <div className="space-y-3">
-          {mockJournalInsights.map((insight, index) => (
-            <motion.div
-              key={insight.id}
-              initial={{ opacity: 0, x: -10 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: 0.4 + index * 0.05 }}
-            >
-              <Card className="card-minimal">
-                <div className="flex items-start gap-3">
-                  <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
-                    <BookOpen className="w-4 h-4 text-primary stroke-[1.5]" />
-                  </div>
-                  <div className="flex-1 space-y-2">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-foreground-tertiary">
-                        {insight.date}
-                      </span>
-                      {insight.mood && (
-                        <Badge variant="secondary" className="text-xs">
-                          {insight.mood}
-                        </Badge>
-                      )}
-                    </div>
-                    <p className="text-sm text-foreground-secondary leading-relaxed">
-                      {insight.summary}
-                    </p>
-                    {insight.pattern && (
-                      <div className="flex items-center gap-1.5 text-xs text-primary">
-                        <Zap className="w-3 h-3 stroke-[1.5]" />
-                        <span>Pattern: {insight.pattern}</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </Card>
-            </motion.div>
-          ))}
-        </div>
-
-        {/* Reflection prompt */}
-        <AnimatePresence>
-          {!showReflectionPrompt && (
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-            >
-              <Button
-                variant="outline"
-                className="w-full"
-                onClick={() => setShowReflectionPrompt(true)}
-              >
-                <Lightbulb className="w-4 h-4 mr-2 stroke-[1.5]" />
-                Answer Reflection Prompt
-              </Button>
-            </motion.div>
-          )}
-          {showReflectionPrompt && (
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-            >
-              <Card className="card-minimal bg-primary/5 border-primary/20">
-                <p className="text-sm text-foreground mb-3">
-                  💭 What felt easier this week — recall or reasoning?
-                </p>
-                <p className="text-xs text-foreground-secondary">
-                  Reflection helps reinforce learning patterns and build metacognition.
-                </p>
-              </Card>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </motion.div>
-
-      {/* AI Recommendations */}
-      <motion.div
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4, delay: 0.4 }}
-        className="space-y-6"
-      >
-        <p className="section-label">💡 AI RECOMMENDATIONS</p>
-
-        <div className="space-y-3">
-          <Card className="card-minimal border-primary/20 bg-primary/5">
-            <div className="flex items-start gap-3">
-              <Clock className="w-5 h-5 text-primary mt-0.5 stroke-[1.5] flex-shrink-0" />
-              <div className="flex-1">
-                <p className="text-sm text-foreground mb-2">
-                  Try 2 shorter Pomodoro cycles tomorrow
-                </p>
-                <p className="text-xs text-foreground-secondary">
-                  Fatigue patterns detected — shorter sessions may improve retention by 12%
-                </p>
-              </div>
+                  <Progress
+                    value={course.completion}
+                    className="h-2.5"
+                  />
+                </Card>
+              ))}
             </div>
-          </Card>
 
-          <Card className="card-minimal border-primary/20 bg-primary/5">
-            <div className="flex items-start gap-3">
-              <TrendingUp className="w-5 h-5 text-primary mt-0.5 stroke-[1.5] flex-shrink-0" />
-              <div className="flex-1">
-                <p className="text-sm text-foreground mb-2">
-                  Schedule a mini-review for trigonometry
-                </p>
-                <p className="text-xs text-foreground-secondary">
-                  Reinforce retention before accuracy decays — optimal timing is within 48 hours
-                </p>
-              </div>
-            </div>
-          </Card>
-        </div>
-      </motion.div>
+            <Button
+              className="w-full h-12"
+              onClick={() => setShowStudyPlan(true)}
+              disabled={insights.incomplete.length === 0 && insights.upcomingSchoolAssessments.length === 0}
+            >
+              <Sparkles className="w-4 h-4 mr-2" />
+              Build Study Schedule
+            </Button>
+
+            <p className="text-[11px] text-center text-[#777]">
+              The schedule combines live Classroom deadlines with
+              school assessments you add yourself. Recommended session
+              lengths are planning estimates, not teacher-provided durations.
+            </p>
+          </>
+        )}
+      </div>
     </div>
+  );
+}
+
+function Summary({
+  label,
+  value,
+  icon,
+}: {
+  label: string;
+  value: number;
+  icon: React.ReactNode;
+}) {
+  return (
+    <Card className="p-4 text-center border border-black/5">
+      <div className="mx-auto mb-2 w-9 h-9 rounded-xl flex items-center justify-center bg-[#FFD50022] text-[#C59F00]">
+        {icon}
+      </div>
+      <p className="m-0 text-xl font-extrabold">{value}</p>
+      <p className="m-0 mt-1 text-[10px] text-[#666]">
+        {label}
+      </p>
+    </Card>
+  );
+}
+
+function InsightCard({
+  icon,
+  title,
+  text,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  text: string;
+}) {
+  return (
+    <Card
+      className="p-4 border border-[#FFD50044]"
+      style={{
+        background: "#FFFDF4",
+        borderRadius: "16px",
+      }}
+    >
+      <div className="flex gap-3">
+        <div className="text-[#C59F00] mt-0.5">{icon}</div>
+        <div>
+          <h3 className="m-0 text-sm font-bold">{title}</h3>
+          <p className="m-0 mt-1 text-xs text-[#595959] leading-relaxed">
+            {text}
+          </p>
+        </div>
+      </div>
+    </Card>
   );
 }

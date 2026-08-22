@@ -12,15 +12,25 @@ import {
   Star, Award, AlertCircle, Plus, Trash2, Check, X, ChevronLeft, ChevronRight, Settings, Archive
 } from "lucide-react";
 import { useData } from "../contexts/DataContext";
+import { useAuth } from "../contexts/AuthContext";
+import {
+  getGoogleClassroomCourses,
+  getGoogleClassroomCoursework,
+  getMyGoogleClassroomSubmissions,
+  type GoogleClassroomCourse,
+  type GoogleClassroomCourseWork,
+  type GoogleClassroomSubmission,
+} from "../services/googleClassroom";
 import { Card } from "./ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
-import { toast } from "sonner@2.0.3";
+import { toast } from "sonner";
 import { CelebrationOverlay } from "./CelebrationOverlay";
 import { OrbitalTimer } from "./OrbitalTimer";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "./ui/dialog";
 import { Label } from "./ui/label";
 import { questionBank, type Question } from "../data/questionBank";
 import { getCurrentAndLastWeekTopicIds, getPastWeeksForQuizBank, type WeeklyLesson, getCurrentWeekLessons, getLastWeekLessons } from "../data/weeklyLessons";
+import { askMarquisAI } from "../services/ai";
 
 type TabType = "focus" | "quizzes" | "memory" | "revision";
 type QuestionType = "multiple-choice" | "short-answer";
@@ -54,29 +64,45 @@ interface Quiz {
   isAdaptive?: boolean;
 }
 
-const mockPastErrors = [
-  {
-    topic: "Algebra",
-    question: "Solve for x: 2x + 5 = 13",
-    correctAnswer: "x = 4",
-    difficulty: "medium" as DifficultyLevel,
-  },
-  {
-    topic: "Geometry",
-    question: "What is the area of a triangle with base 6 and height 8?",
-    correctAnswer: "24",
-    difficulty: "easy" as DifficultyLevel,
-  },
-  {
-    topic: "Trigonometry",
-    question: "What is sin(90°)?",
-    correctAnswer: "1",
-    difficulty: "easy" as DifficultyLevel,
-  },
-];
+type ClassroomWorkItem = GoogleClassroomCourseWork & {
+  courseName: string;
+  submission?: GoogleClassroomSubmission;
+};
+
+function getClassroomDueDate(work: GoogleClassroomCourseWork): Date | null {
+  if (!work.dueDate) return null;
+
+  return new Date(
+    work.dueDate.year,
+    work.dueDate.month - 1,
+    work.dueDate.day,
+    work.dueTime?.hours ?? 23,
+    work.dueTime?.minutes ?? 59,
+    0,
+    0
+  );
+}
+
+function isClassroomSubmitted(work: ClassroomWorkItem): boolean {
+  return (
+    work.submission?.state === "TURNED_IN" ||
+    work.submission?.state === "RETURNED"
+  );
+}
+
 
 export function StudyPage() {
   const { currentStudent } = useData();
+  const { googleProviderToken } = useAuth();
+
+  // Google Classroom State
+  const [googleCourses, setGoogleCourses] = useState<GoogleClassroomCourse[]>([]);
+  const [googleCoursework, setGoogleCoursework] = useState<ClassroomWorkItem[]>([]);
+  const [classroomLoading, setClassroomLoading] = useState(false);
+  const [classroomError, setClassroomError] = useState<string | null>(null);
+  const [classroomCourseFilter, setClassroomCourseFilter] = useState("all");
+  const [classroomSearch, setClassroomSearch] = useState("");
+  const [focusAssignment, setFocusAssignment] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<TabType>("focus");
   const [showInsights, setShowInsights] = useState(false);
   
@@ -102,68 +128,16 @@ export function StudyPage() {
   const [tempSessionsUntilLongBreak, setTempSessionsUntilLongBreak] = useState(4);
 
   // Flashcard State
-  const [flashcards, setFlashcards] = useState<Flashcard[]>([
-    { 
-      id: 1, 
-      question: "What is photosynthesis?", 
-      answer: "The process by which plants use sunlight to create energy", 
-      flipped: false, 
-      category: "Biology", 
-      difficulty: "medium",
-      mastered: false
-    },
-    { 
-      id: 2, 
-      question: "Define Newton's First Law", 
-      answer: "An object at rest stays at rest unless acted upon by a force", 
-      flipped: false, 
-      category: "Physics", 
-      difficulty: "easy",
-      mastered: false
-    },
-    { 
-      id: 3, 
-      question: "What is the Pythagorean theorem?", 
-      answer: "a² + b² = c²", 
-      flipped: false, 
-      category: "Math", 
-      difficulty: "medium",
-      mastered: true
-    }
-  ]);
+  const [flashcards, setFlashcards] = useState<Flashcard[]>([]);
   const [currentFlashcardIndex, setCurrentFlashcardIndex] = useState(0);
   const [isAddingCard, setIsAddingCard] = useState(false);
   const [newCardQuestion, setNewCardQuestion] = useState("");
   const [newCardAnswer, setNewCardAnswer] = useState("");
   const [newCardCategory, setNewCardCategory] = useState("Math");
-  const [flashcardsReviewedToday, setFlashcardsReviewedToday] = useState(12);
+  const [flashcardsReviewedToday, setFlashcardsReviewedToday] = useState(0);
 
   // Quiz State
-  const [quizzes, setQuizzes] = useState<Quiz[]>([
-    {
-      id: 1,
-      topic: "Mathematics",
-      questions: [
-        { 
-          id: 1,
-          question: "What is the formula for the area of a circle?",
-          type: "multiple-choice",
-          difficulty: "easy",
-          correctAnswer: "πr²",
-          options: ["2πr", "πr²", "πd", "r²"],
-          userAnswer: ""
-        },
-        { 
-          id: 2,
-          question: "What is the Pythagorean theorem?",
-          type: "short-answer",
-          difficulty: "medium",
-          correctAnswer: "a² + b² = c²",
-          userAnswer: ""
-        },
-      ]
-    }
-  ]);
+  const [quizzes, setQuizzes] = useState<Quiz[]>([]);
   const [activeQuiz, setActiveQuiz] = useState<Quiz | null>(null);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [showResults, setShowResults] = useState(false);
@@ -176,11 +150,7 @@ export function StudyPage() {
     { id: "revision" as TabType, label: "Revision", icon: BookOpen },
   ];
 
-  const weakAreas = [
-    { topic: "Algebra", difficulty: "medium", color: "#FFD84D" },
-    { topic: "Geometry", difficulty: "hard", color: "#FF6B6B" },
-    { topic: "Trigonometry", difficulty: "easy", color: "#A78BFA" },
-  ];
+  const weakAreas: Array<{ topic: string; difficulty: DifficultyLevel; color: string }> = [];
 
   // Trigger celebration helper
   const triggerCelebration = (message: string, type: "confetti" | "stars" | "fireworks" = "confetti") => {
@@ -189,9 +159,116 @@ export function StudyPage() {
     setShowCelebration(true);
   };
 
+  // Google Classroom Effect
+  useEffect(() => {
+    const loadGoogleClassroom = async () => {
+      if (!googleProviderToken) {
+        setGoogleCourses([]);
+        setGoogleCoursework([]);
+        setClassroomError(null);
+        return;
+      }
+
+      setClassroomLoading(true);
+      setClassroomError(null);
+
+      try {
+        const courses = await getGoogleClassroomCourses(
+          googleProviderToken
+        );
+
+        setGoogleCourses(courses);
+
+        const courseworkByCourse = await Promise.all(
+          courses.map(async (course) => {
+            const [coursework, submissions] = await Promise.all([
+              getGoogleClassroomCoursework(
+                course.id,
+                googleProviderToken
+              ),
+              getMyGoogleClassroomSubmissions(
+                course.id,
+                googleProviderToken
+              ),
+            ]);
+
+            return coursework.map((work) => ({
+              ...work,
+              courseName: course.name,
+              submission: submissions.find(
+                (submission) =>
+                  submission.courseWorkId === work.id
+              ),
+            }));
+          })
+        );
+
+        const flattenedCoursework = courseworkByCourse
+          .flat()
+          .sort((a, b) => {
+            const aDate = a.dueDate
+              ? new Date(
+                  a.dueDate.year,
+                  a.dueDate.month - 1,
+                  a.dueDate.day,
+                  a.dueTime?.hours ?? 23,
+                  a.dueTime?.minutes ?? 59
+                ).getTime()
+              : Number.MAX_SAFE_INTEGER;
+
+            const bDate = b.dueDate
+              ? new Date(
+                  b.dueDate.year,
+                  b.dueDate.month - 1,
+                  b.dueDate.day,
+                  b.dueTime?.hours ?? 23,
+                  b.dueTime?.minutes ?? 59
+                ).getTime()
+              : Number.MAX_SAFE_INTEGER;
+
+            return aDate - bDate;
+          });
+
+        setGoogleCoursework(flattenedCoursework);
+      } catch (error) {
+        console.error(
+          "Google Classroom load failed:",
+          error
+        );
+
+        setClassroomError(
+          error instanceof Error
+            ? error.message
+            : "Unable to load Google Classroom."
+        );
+      } finally {
+        setClassroomLoading(false);
+      }
+    };
+
+    void loadGoogleClassroom();
+  }, [googleProviderToken]);
+
+useEffect(() => {
+  async function test() {
+    const response = await askMarquisAI({
+      mode: "quiz",
+      assignmentTitle: "Photosynthesis",
+      assignmentDescription: "Learn photosynthesis",
+      courseName: "Biology"
+    });
+
+    console.log(response);
+  }
+
+  test();
+}, []);
+
+
+
   // Pomodoro Timer Effect
   useEffect(() => {
-    let interval: NodeJS.Timeout;
+    let interval: ReturnType<typeof setInterval>;
 
     if (isRunning && timeLeft > 0) {
       interval = setInterval(() => {
@@ -518,6 +595,146 @@ export function StudyPage() {
   const totalFlashcards = flashcards.length;
   const currentCard = flashcards[currentFlashcardIndex];
 
+  // Google Classroom dashboard
+  const classroomNow = new Date();
+  const classroomTodayStart = new Date(
+    classroomNow.getFullYear(),
+    classroomNow.getMonth(),
+    classroomNow.getDate()
+  );
+  const classroomTodayEnd = new Date(classroomTodayStart);
+  classroomTodayEnd.setHours(23, 59, 59, 999);
+
+  // Monday-Sunday calendar week.
+  const classroomWeekEnd = new Date(classroomTodayEnd);
+  const dayOfWeek = classroomTodayStart.getDay();
+  const daysUntilSunday = dayOfWeek === 0 ? 0 : 7 - dayOfWeek;
+  classroomWeekEnd.setDate(classroomWeekEnd.getDate() + daysUntilSunday);
+
+  // Hide stale incomplete work from more than 60 days ago by default.
+  const classroomOldCutoff = new Date(classroomTodayStart);
+  classroomOldCutoff.setDate(classroomOldCutoff.getDate() - 60);
+
+  const classroomSearchTerm = classroomSearch.trim().toLowerCase();
+
+  const classroomFilteredWork = googleCoursework.filter((work) => {
+    if (
+      classroomCourseFilter !== "all" &&
+      work.courseId !== classroomCourseFilter
+    ) {
+      return false;
+    }
+
+    if (classroomSearchTerm) {
+      const searchableText = [
+        work.courseName,
+        work.title,
+        work.description ?? "",
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      if (!searchableText.includes(classroomSearchTerm)) {
+        return false;
+      }
+    }
+
+    const dueDate = getClassroomDueDate(work);
+    const submitted = isClassroomSubmitted(work);
+
+    // Old completed work is hidden after 60 days, and old stale missing
+    // work is also hidden so the Study page stays useful.
+    if (dueDate && dueDate < classroomOldCutoff) {
+      return false;
+    }
+
+    // Keep undated work because it may still be active.
+    return submitted || !dueDate || dueDate >= classroomOldCutoff;
+  });
+
+  const sortByDueDate = (a: ClassroomWorkItem, b: ClassroomWorkItem) => {
+    const aDue = getClassroomDueDate(a)?.getTime() ?? Number.MAX_SAFE_INTEGER;
+    const bDue = getClassroomDueDate(b)?.getTime() ?? Number.MAX_SAFE_INTEGER;
+    return aDue - bDue;
+  };
+
+  const classroomOverdue = classroomFilteredWork
+    .filter((work) => {
+      const dueDate = getClassroomDueDate(work);
+      return (
+        !isClassroomSubmitted(work) &&
+        Boolean(dueDate) &&
+        dueDate! < classroomTodayStart
+      );
+    })
+    .sort(sortByDueDate);
+
+  const classroomDueToday = classroomFilteredWork
+    .filter((work) => {
+      const dueDate = getClassroomDueDate(work);
+      return (
+        !isClassroomSubmitted(work) &&
+        Boolean(dueDate) &&
+        dueDate! >= classroomTodayStart &&
+        dueDate! <= classroomTodayEnd
+      );
+    })
+    .sort(sortByDueDate);
+
+  const classroomDueThisWeek = classroomFilteredWork
+    .filter((work) => {
+      const dueDate = getClassroomDueDate(work);
+      return (
+        !isClassroomSubmitted(work) &&
+        Boolean(dueDate) &&
+        dueDate! > classroomTodayEnd &&
+        dueDate! <= classroomWeekEnd
+      );
+    })
+    .sort(sortByDueDate);
+
+  const classroomUpcoming = classroomFilteredWork
+    .filter((work) => {
+      const dueDate = getClassroomDueDate(work);
+      return (
+        !isClassroomSubmitted(work) &&
+        (!dueDate || dueDate > classroomWeekEnd)
+      );
+    })
+    .sort(sortByDueDate);
+
+  const classroomCompleted = classroomFilteredWork
+    .filter((work) => isClassroomSubmitted(work))
+    .sort((a, b) => {
+      const aDue = getClassroomDueDate(a)?.getTime() ?? 0;
+      const bDue = getClassroomDueDate(b)?.getTime() ?? 0;
+      return bDue - aDue;
+    });
+
+  const startFocusForAssignment = (work: ClassroomWorkItem) => {
+    setFocusAssignment(`${work.courseName} — ${work.title}`);
+    setActiveTab("focus");
+    setTimerMode("work");
+
+    if (!isRunning) {
+      setTimeLeft(workDuration * 60);
+    }
+
+    toast.success(`Focus session ready for "${work.title}"`);
+  };
+
+  const formatClassroomDue = (dueDate: Date | null) => {
+    if (!dueDate) return "No due date";
+
+    return dueDate.toLocaleString("en-AU", {
+      weekday: "short",
+      day: "numeric",
+      month: "short",
+      hour: "numeric",
+      minute: "2-digit",
+    });
+  };
+
   return (
     <div
       className="min-h-screen pb-24 relative overflow-hidden"
@@ -575,6 +792,565 @@ export function StudyPage() {
           >
             Focus, practice, and master your subjects
           </p>
+        </motion.div>
+
+        {/* Google Classroom - live dashboard */}
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.05 }}
+          className="mb-8"
+        >
+          <Card
+            className="border-0"
+            style={{
+              background: "#FFFFFF",
+              borderRadius: "24px",
+              padding: "28px",
+              boxShadow: "0px 8px 32px rgba(0,0,0,0.06)",
+            }}
+          >
+            <div className="flex items-start justify-between gap-4 mb-6">
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <BookOpen
+                    className="w-5 h-5"
+                    style={{ color: "#000000" }}
+                  />
+                  <h2
+                    style={{
+                      fontFamily: "Neurial Grotesk, sans-serif",
+                      fontSize: "22px",
+                      fontWeight: 700,
+                      color: "#000000",
+                      margin: 0,
+                    }}
+                  >
+                    Google Classroom
+                  </h2>
+                </div>
+
+                <p
+                  style={{
+                    fontFamily: "Neurial Grotesk, sans-serif",
+                    fontSize: "14px",
+                    color: "#666666",
+                    margin: "6px 0 0",
+                  }}
+                >
+                  Your live homework, deadlines and submission status
+                </p>
+              </div>
+
+              {googleProviderToken && (
+                <Badge
+                  style={{
+                    background: "#FFD84D22",
+                    color: "#000000",
+                    border: "1px solid #FFD84D44",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {googleCourses.length}{" "}
+                  {googleCourses.length === 1 ? "Class" : "Classes"}
+                </Badge>
+              )}
+            </div>
+
+            {!googleProviderToken && (
+              <div
+                style={{
+                  padding: "16px",
+                  borderRadius: "14px",
+                  background: "#FFF8E5",
+                  border: "1px solid #FFD84D55",
+                }}
+              >
+                <p
+                  style={{
+                    fontFamily: "Neurial Grotesk, sans-serif",
+                    fontSize: "14px",
+                    color: "#555555",
+                    margin: 0,
+                  }}
+                >
+                  Sign in with Google to connect your Google Classroom.
+                </p>
+              </div>
+            )}
+
+            {googleProviderToken && classroomLoading && (
+              <div
+                className="flex items-center gap-3"
+                style={{
+                  padding: "16px",
+                  borderRadius: "14px",
+                  background: "#F8F8F8",
+                }}
+              >
+                <RotateCcw className="w-4 h-4 animate-spin" />
+                <p
+                  style={{
+                    fontFamily: "Neurial Grotesk, sans-serif",
+                    fontSize: "14px",
+                    color: "#666666",
+                    margin: 0,
+                  }}
+                >
+                  Loading Google Classroom…
+                </p>
+              </div>
+            )}
+
+            {googleProviderToken &&
+              !classroomLoading &&
+              classroomError && (
+                <div
+                  className="flex items-start gap-3"
+                  style={{
+                    padding: "16px",
+                    borderRadius: "14px",
+                    background: "#FFF1F1",
+                    border: "1px solid #FECACA",
+                  }}
+                >
+                  <AlertCircle
+                    className="w-5 h-5 mt-0.5"
+                    style={{ color: "#DC2626" }}
+                  />
+                  <div>
+                    <p
+                      style={{
+                        fontFamily: "Neurial Grotesk, sans-serif",
+                        fontSize: "14px",
+                        fontWeight: 700,
+                        color: "#B91C1C",
+                        margin: 0,
+                      }}
+                    >
+                      Google Classroom couldn't load
+                    </p>
+                    <p
+                      style={{
+                        fontFamily: "Neurial Grotesk, sans-serif",
+                        fontSize: "13px",
+                        color: "#7F1D1D",
+                        margin: "4px 0 0",
+                      }}
+                    >
+                      {classroomError}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+            {googleProviderToken &&
+              !classroomLoading &&
+              !classroomError && (
+                <>
+                  {/* Summary */}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+                    {[
+                      {
+                        label: "Overdue",
+                        value: classroomOverdue.length,
+                        background: "#FFF1F1",
+                        text: "#B91C1C",
+                      },
+                      {
+                        label: "Due Today",
+                        value: classroomDueToday.length,
+                        background: "#FFF8DC",
+                        text: "#7A5D00",
+                      },
+                      {
+                        label: "This Week",
+                        value: classroomDueThisWeek.length,
+                        background: "#FFF8E5",
+                        text: "#6B5400",
+                      },
+                      {
+                        label: "Completed",
+                        value: classroomCompleted.length,
+                        background: "#ECFDF3",
+                        text: "#166534",
+                      },
+                    ].map((item) => (
+                      <div
+                        key={item.label}
+                        style={{
+                          padding: "15px",
+                          borderRadius: "16px",
+                          background: item.background,
+                        }}
+                      >
+                        <p
+                          style={{
+                            fontFamily: "Neurial Grotesk, sans-serif",
+                            fontSize: "24px",
+                            fontWeight: 700,
+                            color: item.text,
+                            margin: 0,
+                          }}
+                        >
+                          {item.value}
+                        </p>
+                        <p
+                          style={{
+                            fontFamily: "Neurial Grotesk, sans-serif",
+                            fontSize: "12px",
+                            fontWeight: 600,
+                            color: item.text,
+                            margin: "3px 0 0",
+                          }}
+                        >
+                          {item.label}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Search and course filter */}
+                  <div className="grid gap-3 md:grid-cols-2 mb-7">
+                    <Input
+                      value={classroomSearch}
+                      onChange={(event) =>
+                        setClassroomSearch(event.target.value)
+                      }
+                      placeholder="Search assignments..."
+                      style={{
+                        height: "46px",
+                        borderRadius: "12px",
+                        borderColor: "#E6E6E6",
+                        fontFamily: "Neurial Grotesk, sans-serif",
+                      }}
+                    />
+
+                    <Select
+                      value={classroomCourseFilter}
+                      onValueChange={setClassroomCourseFilter}
+                    >
+                      <SelectTrigger
+                        style={{
+                          height: "46px",
+                          borderRadius: "12px",
+                          borderColor: "#E6E6E6",
+                          fontFamily: "Neurial Grotesk, sans-serif",
+                        }}
+                      >
+                        <SelectValue placeholder="All classes" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All classes</SelectItem>
+                        {googleCourses
+                          .slice()
+                          .sort((a, b) => a.name.localeCompare(b.name))
+                          .map((course) => (
+                            <SelectItem
+                              key={course.id}
+                              value={course.id}
+                            >
+                              {course.name}
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {classroomFilteredWork.length === 0 ? (
+                    <div
+                      style={{
+                        padding: "22px",
+                        borderRadius: "14px",
+                        background: "#F8F8F8",
+                        textAlign: "center",
+                      }}
+                    >
+                      <p
+                        style={{
+                          fontFamily: "Neurial Grotesk, sans-serif",
+                          fontSize: "14px",
+                          color: "#666666",
+                          margin: 0,
+                        }}
+                      >
+                        No current assignments match these filters.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-7">
+                      {[
+                        {
+                          title: "Overdue",
+                          subtitle: "Needs attention",
+                          items: classroomOverdue,
+                          accent: "#DC2626",
+                          background: "#FFF7F7",
+                        },
+                        {
+                          title: "Due Today",
+                          subtitle: "Priority for today",
+                          items: classroomDueToday,
+                          accent: "#B7791F",
+                          background: "#FFFBEB",
+                        },
+                        {
+                          title: "Due This Week",
+                          subtitle: "Coming up before Sunday",
+                          items: classroomDueThisWeek,
+                          accent: "#9A7200",
+                          background: "#FFFDF3",
+                        },
+                        {
+                          title: "Upcoming",
+                          subtitle: "Later work and undated tasks",
+                          items: classroomUpcoming,
+                          accent: "#4B5563",
+                          background: "#FAFAFA",
+                        },
+                        {
+                          title: "Completed",
+                          subtitle: "Recently submitted or returned",
+                          items: classroomCompleted,
+                          accent: "#166534",
+                          background: "#F7FCF8",
+                        },
+                      ]
+                        .filter((section) => section.items.length > 0)
+                        .map((section) => (
+                          <div key={section.title}>
+                            <div className="flex items-end justify-between gap-3 mb-3">
+                              <div>
+                                <h3
+                                  style={{
+                                    fontFamily:
+                                      "Neurial Grotesk, sans-serif",
+                                    fontSize: "17px",
+                                    fontWeight: 700,
+                                    color: "#000000",
+                                    margin: 0,
+                                  }}
+                                >
+                                  {section.title}
+                                </h3>
+                                <p
+                                  style={{
+                                    fontFamily:
+                                      "Neurial Grotesk, sans-serif",
+                                    fontSize: "12px",
+                                    color: "#888888",
+                                    margin: "3px 0 0",
+                                  }}
+                                >
+                                  {section.subtitle}
+                                </p>
+                              </div>
+
+                              <Badge
+                                style={{
+                                  background: section.background,
+                                  color: section.accent,
+                                  border: `1px solid ${section.accent}22`,
+                                }}
+                              >
+                                {section.items.length}
+                              </Badge>
+                            </div>
+
+                            <div className="space-y-3">
+                              {section.items.map((work) => {
+                                const dueDate = getClassroomDueDate(work);
+                                const submitted =
+                                  isClassroomSubmitted(work);
+                                const returned =
+                                  work.submission?.state === "RETURNED";
+
+                                const statusLabel = submitted
+                                  ? returned
+                                    ? "Returned"
+                                    : "Submitted"
+                                  : section.title === "Overdue"
+                                    ? "Missing"
+                                    : "Assigned";
+
+                                return (
+                                  <div
+                                    key={`${work.courseId}-${work.id}`}
+                                    style={{
+                                      padding: "18px",
+                                      borderRadius: "16px",
+                                      background: section.background,
+                                      border: "1px solid #ECECEC",
+                                    }}
+                                  >
+                                    <div className="flex items-start justify-between gap-4">
+                                      <div className="min-w-0 flex-1">
+                                        <p
+                                          style={{
+                                            fontFamily:
+                                              "Neurial Grotesk, sans-serif",
+                                            fontSize: "12px",
+                                            fontWeight: 600,
+                                            color: "#888888",
+                                            margin: "0 0 6px",
+                                          }}
+                                        >
+                                          {work.courseName}
+                                        </p>
+
+                                        <h4
+                                          style={{
+                                            fontFamily:
+                                              "Neurial Grotesk, sans-serif",
+                                            fontSize: "16px",
+                                            fontWeight: 700,
+                                            color: "#000000",
+                                            margin: 0,
+                                          }}
+                                        >
+                                          {work.title}
+                                        </h4>
+
+                                        <p
+                                          style={{
+                                            fontFamily:
+                                              "Neurial Grotesk, sans-serif",
+                                            fontSize: "13px",
+                                            color: section.accent,
+                                            margin: "8px 0 0",
+                                            fontWeight: 600,
+                                          }}
+                                        >
+                                          {dueDate
+                                            ? `Due ${formatClassroomDue(
+                                                dueDate
+                                              )}`
+                                            : "No due date"}
+                                        </p>
+
+                                        {typeof work.submission
+                                          ?.assignedGrade === "number" && (
+                                          <p
+                                            style={{
+                                              fontFamily:
+                                                "Neurial Grotesk, sans-serif",
+                                              fontSize: "13px",
+                                              color: "#666666",
+                                              margin: "5px 0 0",
+                                            }}
+                                          >
+                                            Grade:{" "}
+                                            {
+                                              work.submission
+                                                .assignedGrade
+                                            }
+                                            {typeof work.maxPoints ===
+                                            "number"
+                                              ? ` / ${work.maxPoints}`
+                                              : ""}
+                                          </p>
+                                        )}
+                                      </div>
+
+                                      <Badge
+                                        style={{
+                                          background: submitted
+                                            ? "#DCFCE7"
+                                            : section.title === "Overdue"
+                                              ? "#FEE2E2"
+                                              : "#FFF4CC",
+                                          color: submitted
+                                            ? "#166534"
+                                            : section.title === "Overdue"
+                                              ? "#B91C1C"
+                                              : "#7A5D00",
+                                          border: "none",
+                                          flexShrink: 0,
+                                        }}
+                                      >
+                                        {statusLabel}
+                                      </Badge>
+                                    </div>
+
+                                    {work.description && (
+                                      <p
+                                        style={{
+                                          fontFamily:
+                                            "Neurial Grotesk, sans-serif",
+                                          fontSize: "13px",
+                                          color: "#666666",
+                                          lineHeight: 1.5,
+                                          margin: "12px 0 0",
+                                          whiteSpace: "pre-line",
+                                        }}
+                                      >
+                                        {work.description.length > 180
+                                          ? `${work.description.slice(
+                                              0,
+                                              180
+                                            )}…`
+                                          : work.description}
+                                      </p>
+                                    )}
+
+                                    <div className="flex flex-wrap gap-2 mt-4">
+                                      {!submitted && (
+                                        <Button
+                                          type="button"
+                                          onClick={() =>
+                                            startFocusForAssignment(work)
+                                          }
+                                          className="border-0"
+                                          style={{
+                                            height: "40px",
+                                            borderRadius: "12px",
+                                            background:
+                                              "linear-gradient(135deg, #FFD84D 0%, #FECF38 100%)",
+                                            color: "#000000",
+                                            fontFamily:
+                                              "Neurial Grotesk, sans-serif",
+                                            fontWeight: 700,
+                                          }}
+                                        >
+                                          <Play className="w-4 h-4 mr-2" />
+                                          Start Focus
+                                        </Button>
+                                      )}
+
+                                      {work.alternateLink && (
+                                        <Button
+                                          type="button"
+                                          onClick={() =>
+                                            window.open(
+                                              work.alternateLink,
+                                              "_blank",
+                                              "noopener,noreferrer"
+                                            )
+                                          }
+                                          variant="outline"
+                                          style={{
+                                            height: "40px",
+                                            borderRadius: "12px",
+                                            fontFamily:
+                                              "Neurial Grotesk, sans-serif",
+                                            fontWeight: 600,
+                                          }}
+                                        >
+                                          Open in Classroom
+                                        </Button>
+                                      )}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ))}
+                    </div>
+                  )}
+                </>
+              )}
+          </Card>
         </motion.div>
 
         {/* 4-Tab Quick Action Row */}
@@ -892,6 +1668,66 @@ export function StudyPage() {
                   >
                     {timerMode === "work" ? "Work Session - Stay focused!" : "Break Time - Relax!"}
                   </p>
+
+                  {focusAssignment && timerMode === "work" && (
+                    <div
+                      className="flex items-center justify-between gap-3 mb-6"
+                      style={{
+                        padding: "14px 16px",
+                        borderRadius: "14px",
+                        background: "#FFF8E5",
+                        border: "1px solid #FFD84D55",
+                        textAlign: "left",
+                      }}
+                    >
+                      <div className="min-w-0">
+                        <p
+                          style={{
+                            fontFamily: "Neurial Grotesk, sans-serif",
+                            fontSize: "11px",
+                            fontWeight: 700,
+                            color: "#8A6A00",
+                            textTransform: "uppercase",
+                            letterSpacing: "0.05em",
+                            margin: 0,
+                          }}
+                        >
+                          Focusing on
+                        </p>
+                        <p
+                          style={{
+                            fontFamily: "Neurial Grotesk, sans-serif",
+                            fontSize: "14px",
+                            fontWeight: 700,
+                            color: "#000000",
+                            margin: "4px 0 0",
+                          }}
+                        >
+                          {focusAssignment}
+                        </p>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => setFocusAssignment(null)}
+                        aria-label="Clear focus assignment"
+                        style={{
+                          width: "32px",
+                          height: "32px",
+                          borderRadius: "10px",
+                          border: "1px solid #E6E6E6",
+                          background: "#FFFFFF",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          cursor: "pointer",
+                          flexShrink: 0,
+                        }}
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  )}
 
                   {/* Orbital Solar System */}
                   <div className="mb-6">

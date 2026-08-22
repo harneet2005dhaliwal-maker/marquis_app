@@ -63,6 +63,8 @@ interface TimeSlot {
   time: string;
   available: boolean;
   status: TimeSlotStatus;
+  classId?: string;
+  teacher?: string | null;
 }
 
 interface ChangeRequest {
@@ -76,7 +78,11 @@ interface ChangeRequest {
 }
 
 export function BookingsPage() {
-  const { currentStudent, getUpcomingClasses, classes } = useData();
+  const {
+    currentStudent,
+    getUpcomingClasses,
+    classes,
+  } = useData();
   const [viewMode, setViewMode] = useState<ViewMode>("schedule");
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [selectedTimeSlot, setSelectedTimeSlot] = useState<string | null>(null);
@@ -156,49 +162,96 @@ export function BookingsPage() {
 
   // ---------- REAL time-slot builder (from real classes) ----------
 
-  const buildAvailableTimeSlotsForDate = (date: Date | null): TimeSlot[] => {
-    if (!date) return [];
+  const normaliseSubject = (subject?: string | null) =>
+    (subject ?? "")
+      .toLowerCase()
+      .replace(/^individual\\s*-\\s*/i, "")
+      .replace(/\\bmaths\\b/g, "math")
+      .replace(/\\s+/g, " ")
+      .trim();
+
+  const buildAvailableTimeSlotsForDate = (
+    date: Date | null
+  ): TimeSlot[] => {
+    if (!date || !currentStudent) return [];
 
     const weekdayShort = date
-      .toLocaleDateString("en-US", { weekday: "short" })
+      .toLocaleDateString("en-AU", {
+        weekday: "short",
+      })
+      .slice(0, 3)
       .toLowerCase();
 
-    // Use subject/year from:
-    //  - class being rescheduled (if any), otherwise
-    //  - current student’s default subject/year
     const subjectFilter =
-      classToReschedule?.subject || currentStudent?.subject || undefined;
-    const yearFilter = currentStudent?.year || undefined;
+      classToReschedule?.subject ??
+      currentStudent.subject ??
+      "";
 
-    // Group classes by time
+    const yearFilter =
+      classToReschedule?.yearLevel ??
+      currentStudent.yearLevel ??
+      "";
+
+    const candidateClasses = classes.filter((cls) => {
+      const sameSubject =
+        !subjectFilter ||
+        normaliseSubject(cls.subject) ===
+          normaliseSubject(subjectFilter);
+
+      const sameYear =
+        !yearFilter ||
+        cls.yearLevel === yearFilter;
+
+      const isDifferentClass =
+        cls.id !== classToReschedule?.id;
+
+      return (
+        sameSubject &&
+        sameYear &&
+        isDifferentClass
+      );
+    });
+
     const slotMap = new Map<string, TimeSlot>();
 
-    classes.forEach((cls) => {
-      // Day-of-week match (use first 3 letters, case-insensitive)
-      const clsDay = (cls.dayOfWeek || "").slice(0, 3).toLowerCase();
+    candidateClasses.forEach((cls) => {
+      const clsDay = (
+        cls.dayOfWeek ??
+        cls.lessonDay ??
+        ""
+      )
+        .slice(0, 3)
+        .toLowerCase();
+
       if (clsDay !== weekdayShort) return;
 
-      if (subjectFilter && cls.subject !== subjectFilter) return;
-      if (yearFilter && cls.yearLevel !== yearFilter) return;
+      const time =
+        cls.time ??
+        (cls.startTime && cls.endTime
+          ? `${cls.startTime.slice(0, 5)}–${cls.endTime.slice(0, 5)}`
+          : "");
 
-      const time = cls.time || "";
       if (!time) return;
 
-      const isCurrentStudent =
-        currentStudent && cls.studentId === currentStudent.id;
+      // Do not offer the exact class currently being rescheduled.
+      if (
+        viewMode === "reschedule" &&
+        cls.id === classToReschedule?.id
+      ) {
+        return;
+      }
 
-      const existing = slotMap.get(time);
-
-      if (!existing) {
+      if (!slotMap.has(time)) {
         slotMap.set(time, {
           time,
-          available: !isCurrentStudent,
-          status: isCurrentStudent ? "scheduled" : "available",
+          available: true,
+          status: "available",
+          classId: cls.id,
+          teacher:
+            cls.teacherName ??
+            cls.teacher ??
+            null,
         });
-      } else if (isCurrentStudent) {
-        // Upgrade any existing "available" slot to "scheduled" if this student is in that time
-        existing.available = false;
-        existing.status = "scheduled";
       }
     });
 
@@ -241,15 +294,33 @@ export function BookingsPage() {
 
   const confirmReschedule = () => {
     if (classToReschedule && selectedDate && selectedTimeSlot) {
+      const selectedSlot = availableTimeSlots.find(
+        (slot) => slot.time === selectedTimeSlot
+      );
+
+      const selectedReplacementClass = selectedSlot?.classId
+        ? classes.find(
+            (cls) => cls.id === selectedSlot.classId
+          )
+        : undefined;
+
       const newClass: LocalClass = {
         id: Date.now(),
-        subject: classToReschedule.subject,
-        teacher: classToReschedule.teacher,
-        dayOfWeek: selectedDate.toLocaleDateString("en-US", {
+        subject:
+          selectedReplacementClass?.subject ??
+          classToReschedule.subject,
+        teacher:
+          selectedReplacementClass?.teacherName ??
+          selectedReplacementClass?.teacher ??
+          selectedSlot?.teacher ??
+          classToReschedule.teacher,
+        dayOfWeek: selectedDate.toLocaleDateString("en-AU", {
           weekday: "short",
         }),
-        time: selectedTimeSlot,
-        date: selectedDate.toLocaleDateString("en-US", {
+        time:
+          selectedReplacementClass?.time ??
+          selectedTimeSlot,
+        date: selectedDate.toLocaleDateString("en-AU", {
           weekday: "short",
           month: "short",
           day: "numeric",
@@ -264,7 +335,7 @@ export function BookingsPage() {
         classId: classToReschedule.id,
         originalDate: classToReschedule.date,
         originalTime: classToReschedule.time,
-        newDate: selectedDate.toLocaleDateString("en-US", {
+        newDate: selectedDate.toLocaleDateString("en-AU", {
           weekday: "short",
           month: "short",
           day: "numeric",
@@ -282,11 +353,11 @@ export function BookingsPage() {
   const confirmBooking = () => {
     if (selectedDate && selectedTimeSlot) {
       const weekdayShort = selectedDate
-        .toLocaleDateString("en-US", { weekday: "short" })
+        .toLocaleDateString("en-AU", { weekday: "short" })
         .toLowerCase();
 
       const subjectFilter = currentStudent?.subject;
-      const yearFilter = currentStudent?.year;
+      const yearFilter = currentStudent?.yearLevel;
 
       // Find a real class that matches this day + time (+ subject/year)
       const matchingClass = classes.find((cls) => {
@@ -313,11 +384,11 @@ export function BookingsPage() {
         id: Date.now(),
         subject,
         teacher,
-        dayOfWeek: selectedDate.toLocaleDateString("en-US", {
+        dayOfWeek: selectedDate.toLocaleDateString("en-AU", {
           weekday: "short",
         }),
         time: selectedTimeSlot,
-        date: selectedDate.toLocaleDateString("en-US", {
+        date: selectedDate.toLocaleDateString("en-AU", {
           weekday: "short",
           month: "short",
           day: "numeric",
@@ -888,7 +959,7 @@ export function BookingsPage() {
                       color: "#000000",
                     }}
                   >
-                    {currentMonth.toLocaleDateString("en-US", {
+                    {currentMonth.toLocaleDateString("en-AU", {
                       month: "long",
                       year: "numeric",
                     })}
@@ -1081,7 +1152,7 @@ export function BookingsPage() {
                       color: "#6E6E70",
                     }}
                   >
-                    {selectedDate.toLocaleDateString("en-US", {
+                    {selectedDate.toLocaleDateString("en-AU", {
                       weekday: "long",
                       month: "long",
                       day: "numeric",
@@ -1097,7 +1168,7 @@ export function BookingsPage() {
                           color: "#6E6E70",
                         }}
                       >
-                        No classes run on this day for your subject/year.
+                        No matching alternative classes run on this day.
                       </p>
                     )}
 
@@ -1286,7 +1357,7 @@ export function BookingsPage() {
                           const iso = requestDate;
                           const displayDate = new Date(
                             requestDate
-                          ).toLocaleDateString("en-US", {
+                          ).toLocaleDateString("en-AU", {
                             weekday: "short",
                             month: "short",
                             day: "numeric",
@@ -1544,4 +1615,3 @@ export function BookingsPage() {
     </div>
   );
 }
-

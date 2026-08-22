@@ -1,4 +1,11 @@
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+} from "react";
+
+import { supabase } from "../lib/supabase";
 
 type UserType = "student" | "parent";
 
@@ -15,81 +22,289 @@ interface AuthContextValue {
   userType: UserType | null;
   studentId: string | null;
   user: SessionUser | null;
-  login: (studentId: string, role: UserType) => void;
+
+  googleProviderToken: string | null;
+
+  login: (
+    email: string,
+    password: string,
+    role: UserType
+  ) => Promise<void>;
+
   logout: () => Promise<void>;
   refreshSession: () => Promise<void>;
 }
 
-const AuthContext = createContext<AuthContextValue | undefined>(undefined);
+const AuthContext =
+  createContext<AuthContextValue | undefined>(undefined);
 
-const API_BASE = "http://localhost:4000";
+export const AuthProvider: React.FC<{
+  children: React.ReactNode;
+}> = ({ children }) => {
+  const [isAuthenticated, setIsAuthenticated] =
+    useState(false);
 
-export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [userType, setUserType] = useState<UserType | null>(null);
-  const [studentId, setStudentId] = useState<string | null>(null);
-  const [user, setUser] = useState<SessionUser | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [userType, setUserType] =
+    useState<UserType | null>(null);
 
-  const applyUser = (u: SessionUser | null) => {
-    setUser(u);
-    if (u) {
+  const [studentId, setStudentId] =
+    useState<string | null>(null);
+
+  const [user, setUser] =
+    useState<SessionUser | null>(null);
+
+  const [isLoading, setIsLoading] =
+    useState(true);
+
+  const [
+    googleProviderToken,
+    setGoogleProviderToken,
+  ] = useState<string | null>(null);
+
+  const applyUser = (
+    nextUser: SessionUser | null
+  ) => {
+    setUser(nextUser);
+
+    if (nextUser) {
       setIsAuthenticated(true);
-      setStudentId(u.studentId);
-      setUserType(u.role);
-    } else {
-      setIsAuthenticated(false);
-      setStudentId(null);
-      setUserType(null);
+      setStudentId(nextUser.studentId);
+      setUserType(nextUser.role);
+      return;
     }
+
+    setIsAuthenticated(false);
+    setStudentId(null);
+    setUserType(null);
+  };
+
+  const loadUserFromSupabase = async (
+    authUserId: string,
+    email?: string
+  ) => {
+    const {
+      data: student,
+      error: studentError,
+    } = await supabase
+      .from("students")
+      .select(
+        "id, first_name, last_name, user_id"
+      )
+      .eq("user_id", authUserId)
+      .maybeSingle();
+
+    if (studentError) {
+      console.error(
+        "Could not load student record:",
+        studentError
+      );
+
+      throw new Error(
+        "There was a problem loading your student account."
+      );
+    }
+
+    if (!student) {
+      throw new Error(
+        "Your login exists, but it is not linked to a student record."
+      );
+    }
+
+    const fullName = [
+      student.first_name,
+      student.last_name,
+    ]
+      .filter(Boolean)
+      .join(" ");
+
+    applyUser({
+      studentId: student.id,
+      role: "student",
+      name: fullName || undefined,
+      email,
+    });
+  };
+
+  const processSession = async (
+    session: any
+  ) => {
+    if (!session?.user) {
+      applyUser(null);
+      setGoogleProviderToken(null);
+      return;
+    }
+
+    if (session.provider_token) {
+      setGoogleProviderToken(
+        session.provider_token
+      );
+
+      console.log(
+        "Google provider token exists:",
+        true
+      );
+    } else {
+      setGoogleProviderToken(null);
+
+      console.log(
+        "Google provider token exists:",
+        false
+      );
+    }
+
+    await loadUserFromSupabase(
+      session.user.id,
+      session.user.email
+    );
   };
 
   const refreshSession = async () => {
-    try {
-      const res = await fetch(`${API_BASE}/api/me`, {
-        method: "GET",
-        credentials: "include",
-      });
+    const {
+      data: { session },
+      error,
+    } = await supabase.auth.getSession();
 
-      if (!res.ok) {
-        applyUser(null);
-        return;
-      }
+    if (error) {
+      console.error(
+        "Session check failed:",
+        error
+      );
 
-      const data = await res.json();
-      // backend returns: { user: req.session.appAuth || null }
-      applyUser(data.user || null);
-    } catch (err) {
-      console.error("Session bootstrap failed:", err);
       applyUser(null);
+      setGoogleProviderToken(null);
+      return;
     }
+
+    await processSession(session);
   };
 
   useEffect(() => {
-    (async () => {
-      setIsLoading(true);
-      await refreshSession();
-      setIsLoading(false);
-    })();
+    let isMounted = true;
+
+    const initialiseAuth = async () => {
+      try {
+        setIsLoading(true);
+        await refreshSession();
+      } catch (error) {
+        console.error(
+          "Authentication startup failed:",
+          error
+        );
+
+        if (isMounted) {
+          applyUser(null);
+          setGoogleProviderToken(null);
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    void initialiseAuth();
+
+    const {
+      data: { subscription },
+    } =
+      supabase.auth.onAuthStateChange(
+        async (event, session) => {
+          console.log(
+            "Auth event:",
+            event
+          );
+
+          try {
+            if (!isMounted) return;
+
+            await processSession(session);
+          } catch (error) {
+            console.error(
+              "Auth state update failed:",
+              error
+            );
+
+            if (isMounted) {
+              applyUser(null);
+              setGoogleProviderToken(null);
+            }
+          } finally {
+            if (isMounted) {
+              setIsLoading(false);
+            }
+          }
+        }
+      );
+
+    return () => {
+      isMounted = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
-  // Email/password login still sets local state immediately.
-  // (Optional: you can also call refreshSession() here if your backend sets session in /api/login)
-  const login = (id: string, role: UserType) => {
-    applyUser({ studentId: id, role });
+  const login = async (
+    email: string,
+    password: string,
+    role: UserType
+  ) => {
+    if (role !== "student") {
+      throw new Error(
+        "Parent login has not been connected yet."
+      );
+    }
+
+    const normalisedEmail =
+      email.trim().toLowerCase();
+
+    if (
+      !normalisedEmail ||
+      !password
+    ) {
+      throw new Error(
+        "Please enter your email and password."
+      );
+    }
+
+    const {
+      data,
+      error,
+    } =
+      await supabase.auth.signInWithPassword({
+        email: normalisedEmail,
+        password,
+      });
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    if (!data.user) {
+      throw new Error(
+        "Login succeeded, but no user was returned."
+      );
+    }
+
+    await loadUserFromSupabase(
+      data.user.id,
+      data.user.email
+    );
   };
 
   const logout = async () => {
-    try {
-      await fetch(`${API_BASE}/api/logout`, {
-        method: "POST",
-        credentials: "include",
-      });
-    } catch (err) {
-      console.error("Logout request failed:", err);
-    } finally {
-      applyUser(null);
+    const { error } =
+      await supabase.auth.signOut();
+
+    if (error) {
+      console.error(
+        "Logout failed:",
+        error
+      );
+
+      throw new Error(error.message);
     }
+
+    applyUser(null);
+    setGoogleProviderToken(null);
   };
 
   return (
@@ -100,6 +315,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         userType,
         studentId,
         user,
+        googleProviderToken,
         login,
         logout,
         refreshSession,
@@ -111,7 +327,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 };
 
 export const useAuth = () => {
-  const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error("useAuth must be used within AuthProvider");
-  return ctx;
+  const context =
+    useContext(AuthContext);
+
+  if (!context) {
+    throw new Error(
+      "useAuth must be used within AuthProvider"
+    );
+  }
+
+  return context;
 };

@@ -2,11 +2,16 @@ import React, { useState } from "react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { motion } from "motion/react";
+import { supabase } from "../lib/supabase";
 // import marquisLogo from "../assets/logo.png";
 const marquisLogo = "https://placeholder.com/260x100?text=MARQUIS";
 
 interface LoginPageProps {
-  onLogin: (studentId: string, role: "student" | "parent") => void;
+  onLogin: (
+    email: string,
+    password: string,
+    role: "student" | "parent"
+  ) => Promise<void>;
 }
 
 export function LoginPage({ onLogin }: LoginPageProps) {
@@ -14,39 +19,96 @@ export function LoginPage({ onLogin }: LoginPageProps) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [googleLoading, setGoogleLoading] = useState(false);
 
-  const handleGoogleLogin = () => {
-  // Use Vite proxy so it works regardless of backend host
-  window.location.href = "/auth/google/login";
-};
+  const handleGoogleLogin = async () => {
+    setError(null);
+    setGoogleLoading(true);
 
-  const handleLogin = async (e: React.FormEvent) => {
+    try {
+      /*
+       * Google login requests read-only Google Classroom access.
+       *
+       * During development, the test account may appear as a student in
+       * some courses and as a teacher/admin in others, so we request both
+       * read-only coursework scopes. These scopes do not allow the app to
+       * edit Classroom coursework or submissions.
+       */
+      const classroomScopes = [
+        "openid",
+        "email",
+        "profile",
+
+        // Read the Google Classroom courses visible to this account.
+        "https://www.googleapis.com/auth/classroom.courses.readonly",
+
+        // Student access: read the signed-in student's coursework
+        // and their own submission status/grades.
+        "https://www.googleapis.com/auth/classroom.coursework.me.readonly",
+
+        // Teacher/admin access: needed for test/staff accounts that
+        // are teachers or administrators in some Classroom courses.
+        "https://www.googleapis.com/auth/classroom.coursework.students.readonly",
+      ].join(" ");
+
+      const { error: oauthError } =
+        await supabase.auth.signInWithOAuth({
+          provider: "google",
+          options: {
+            redirectTo: window.location.origin,
+
+            // Parents do not need Classroom access at login yet.
+            scopes:
+              activeTab === "student"
+                ? classroomScopes
+                : ["openid", "email", "profile"].join(" "),
+
+            queryParams: {
+              access_type: "offline",
+              prompt: "consent",
+            },
+          },
+        });
+
+      if (oauthError) {
+        throw oauthError;
+      }
+
+      // On success Google redirects away from this page,
+      // so there is normally nothing else to do here.
+    } catch (err) {
+      console.error("Google login error:", err);
+
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Unable to sign in with Google."
+      );
+
+      setGoogleLoading(false);
+    }
+  };
+
+  const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError(null);
 
+    const email = username.trim();
+
+    if (!email || !password) {
+      setError("Please enter your email and password.");
+      return;
+    }
+
     try {
-      const res = await fetch("http://localhost:4000/api/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include", // ✅ important (so backend session cookie is set)
-        body: JSON.stringify({
-          email: username.trim(),
-          password,
-          role: activeTab, // optional (backend can ignore for now)
-        }),
-      });
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        setError(data.message || "Invalid email or password");
-        return;
-      }
-
-      const data = await res.json();
-      onLogin(data.studentId, data.role);
+      await onLogin(email, password, activeTab);
     } catch (err) {
-      console.error("Login error:", err);
-      setError("Unable to reach server. Please try again.");
+      console.error("Supabase login error:", err);
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Invalid email or password. Please try again."
+      );
     }
   };
 
@@ -111,6 +173,7 @@ export function LoginPage({ onLogin }: LoginPageProps) {
             type="button"
             className="w-full"
             onClick={handleGoogleLogin}
+            disabled={googleLoading}
             style={{
               background: "#111111",
               color: "#FFFFFF",
@@ -121,12 +184,14 @@ export function LoginPage({ onLogin }: LoginPageProps) {
               height: "56px",
               borderRadius: "14px",
               border: "none",
-              cursor: "pointer",
+              cursor: googleLoading ? "wait" : "pointer",
               transition: "all 200ms ease",
               boxShadow: "0 4px 12px rgba(0,0,0,0.20)",
             }}
           >
-            Continue with Google
+            {googleLoading
+              ? "Connecting to Google..."
+              : "Continue with Google"}
           </Button>
 
           {/* Divider */}
@@ -408,4 +473,3 @@ export function LoginPage({ onLogin }: LoginPageProps) {
     </div>
   );
 }
-

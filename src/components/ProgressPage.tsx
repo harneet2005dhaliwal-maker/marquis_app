@@ -1,1367 +1,1347 @@
-import { useState } from "react";
-import { Card } from "./ui/card";
-import { Button } from "./ui/button";
+import { useEffect, useMemo, useState } from "react";
+import {
+  AlertCircle,
+  ArrowUpRight,
+  BookOpen,
+  CalendarDays,
+  CheckCircle2,
+  ChevronRight,
+  Clock,
+  GraduationCap,
+  Plus,
+  Sparkles,
+  TrendingUp,
+} from "lucide-react";
+import { motion } from "motion/react";
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+} from "recharts";
+
 import { Badge } from "./ui/badge";
-import { Trophy, Star, BookOpen, Flame, Target, Clock, TrendingUp, TrendingDown, Calendar, Award, Lock, BarChart3, Sparkles, Brain, Zap, ChevronRight, ChevronDown, ChevronUp, ArrowRight, Circle, Crosshair, Lightbulb, CheckCircle2 } from "lucide-react";
-import { motion, AnimatePresence } from "motion/react";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Dot } from "recharts";
+import { Button } from "./ui/button";
+import { Card } from "./ui/card";
 import { Progress } from "./ui/progress";
-import { AchievementUnlock } from "./AchievementUnlock";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "./ui/tabs";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "./ui/dialog";
+
 import { AIInsightsPage } from "./AIInsightsPage";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "./ui/dialog";
+import { useAuth } from "../contexts/AuthContext";
+import { supabase } from "../lib/supabase";
 
-// Mock study history data
-const studyHistoryData = [
-  { day: "Mon", hours: 2.5, sessions: 3, fullDay: "Monday", isPeak: false },
-  { day: "Tue", hours: 3.2, sessions: 4, fullDay: "Tuesday", isPeak: false },
-  { day: "Wed", hours: 1.8, sessions: 2, fullDay: "Wednesday", isPeak: false },
-  { day: "Thu", hours: 4.0, sessions: 5, fullDay: "Thursday", isPeak: true },
-  { day: "Fri", hours: 3.5, sessions: 4, fullDay: "Friday", isPeak: false },
-  { day: "Sat", hours: 2.0, sessions: 2, fullDay: "Saturday", isPeak: false },
-  { day: "Sun", hours: 3.8, sessions: 4, fullDay: "Sunday", isPeak: true },
-];
-
-const previousWeekTotal = 18.2;
-const currentWeekTotal = 20.8;
-const weeklyChange = ((currentWeekTotal - previousWeekTotal) / previousWeekTotal) * 100;
-
-// Custom animated dot for chart
-const CustomDot = (props: any) => {
-  const { cx, cy, payload } = props;
-  return (
-    <g>
-      {/* Glow effect */}
-      <circle
-        cx={cx}
-        cy={cy}
-        r={8}
-        fill="rgba(255, 213, 0, 0.2)"
-        style={{ filter: 'blur(4px)' }}
-      />
-      <circle
-        cx={cx}
-        cy={cy}
-        r={4}
-        fill="#FFD500"
-        stroke="#FFFFFF"
-        strokeWidth={2}
-      />
-      {/* Peak marker */}
-      {payload.isPeak && (
-        <text
-          x={cx}
-          y={cy - 15}
-          textAnchor="middle"
-          fontSize="12"
-        >
-          🔥
-        </text>
-      )}
-    </g>
-  );
-};
-
-// Custom Tooltip
-const CustomTooltip = ({ active, payload }: any) => {
-  if (active && payload && payload.length) {
-    const data = payload[0].payload;
-    return (
-      <motion.div
-        initial={{ opacity: 0, scale: 0.9, y: 5 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        className="bg-white rounded-xl p-3"
-        style={{ 
-          boxShadow: '0px 4px 20px rgba(0,0,0,0.08)',
-          border: '1px solid rgba(0,0,0,0.06)'
-        }}
-      >
-        <p className="text-xs mb-1" style={{ fontFamily: 'Inter, sans-serif', fontWeight: 600, color: '#595959' }}>
-          {data.fullDay}
-        </p>
-        <p className="text-sm mb-0" style={{ fontFamily: 'Inter, sans-serif', fontWeight: 700, color: '#000000' }}>
-          {payload[0].value} {payload[0].name}
-        </p>
-        {data.sessions && (
-          <p className="text-xs mt-1 mb-0" style={{ fontFamily: 'Inter, sans-serif', color: '#595959' }}>
-            {data.sessions} sessions
-          </p>
-        )}
-      </motion.div>
-    );
-  }
-  return null;
-};
-
-// Unified Card Component
-const UnifiedCard = ({ children, className = "", delay = 0, glow = false }: any) => (
-  <motion.div
-    initial={{ opacity: 0, y: 20 }}
-    animate={{ opacity: 1, y: 0 }}
-    transition={{ delay, duration: 0.4 }}
-    whileHover={{ y: -2 }}
-    className={className}
-  >
-    <Card 
-      className="border-0 relative overflow-hidden"
-      style={{ 
-        borderRadius: '18px',
-        boxShadow: glow 
-          ? '0px 4px 20px rgba(255,213,0,0.12), 0px 2px 8px rgba(0,0,0,0.04)' 
-          : '0px 4px 20px rgba(0,0,0,0.05)',
-        background: '#FFFFFF',
-        border: '1px solid rgba(0,0,0,0.06)'
-      }}
-    >
-      {/* Top gradient stripe */}
-      <div 
-        className="absolute top-0 left-0 right-0 h-1"
-        style={{ 
-          background: 'linear-gradient(90deg, rgba(255,213,0,0.15), rgba(255,213,0,0.05))'
-        }}
-      />
-      {children}
-    </Card>
-  </motion.div>
-);
+import {
+  getGoogleClassroomCourses,
+  getGoogleClassroomCoursework,
+  getMyGoogleClassroomSubmissions,
+  type GoogleClassroomCourse,
+  type GoogleClassroomCourseWork,
+  type GoogleClassroomSubmission,
+} from "../services/googleClassroom";
 
 interface ProgressPageProps {
   onNavigate?: (tab: string) => void;
 }
 
-export function ProgressPage({ onNavigate }: ProgressPageProps) {
-  const [chartMetric, setChartMetric] = useState<'hours' | 'sessions'>('hours');
-  const [expandedGoal, setExpandedGoal] = useState<number | null>(null);
-  const [activeInsightTab, setActiveInsightTab] = useState<'trends' | 'tips' | 'predictions'>('trends');
-  const [expandedPlanet, setExpandedPlanet] = useState<string | null>(null);
-  const [showAIInsights, setShowAIInsights] = useState(false);
-  const [expandedRecommendation, setExpandedRecommendation] = useState<number | null>(null);
-  const [selectedAchievement, setSelectedAchievement] = useState<any>(null);
-  const [showAchievementModal, setShowAchievementModal] = useState(false);
-  const [showConfetti, setShowConfetti] = useState(false);
+type ClassroomWorkItem = GoogleClassroomCourseWork & {
+  courseName: string;
+  submission?: GoogleClassroomSubmission;
+};
 
-  const currentStreak = 7;
-  const nextStreakMilestone = 14;
-  const streakProgress = (currentStreak / nextStreakMilestone) * 100;
+interface SchoolAssessment {
+  id: string;
+  student_id: string;
+  subject: string;
+  title: string;
+  assessment_type: string;
+  due_at: string;
+  weighting: number | null;
+  difficulty: number | null;
+  confidence: number | null;
+  notes: string | null;
+}
 
-  const achievements = [
-    { 
-      id: 1, 
-      name: "First Week", 
-      icon: BookOpen, 
-      earned: true, 
-      color: "#FFD500", 
-      points: 10,
-      pattern: "radial"
-    },
-    { 
-      id: 2, 
-      name: "7-Day Streak", 
-      icon: Flame, 
-      earned: true, 
-      color: "#FFD500", 
-      points: 25,
-      pattern: "radial"
-    },
-    { 
-      id: 3, 
-      name: "20 Hours", 
-      icon: Clock, 
-      earned: true, 
-      color: "#FFD500", 
-      points: 50,
-      pattern: "radial"
-    },
-    { 
-      id: 4, 
-      name: "30-Day Goal", 
-      icon: Trophy, 
-      earned: false, 
-      color: "#E6E6E6", 
-      points: 100,
-      pattern: "radial"
-    },
-    { 
-      id: 5, 
-      name: "Math Master", 
-      icon: Target, 
-      earned: false, 
-      color: "#E6E6E6", 
-      points: 75,
-      pattern: "radial"
-    },
-    { 
-      id: 6, 
-      name: "Quiz Champion", 
-      icon: Star, 
-      earned: false, 
-      color: "#E6E6E6", 
-      points: 50,
-      pattern: "radial"
-    },
-  ];
+interface CourseSummary {
+  id: string;
+  name: string;
+  total: number;
+  completed: number;
+  overdue: number;
+  graded: number;
+  completionRate: number;
+  averagePercent: number | null;
+}
 
-  const activeGoals = [
-    {
-      id: 1,
-      title: "Complete 30 study hours",
-      subject: "Mathematics",
-      progress: 68,
-      deadline: "Dec 15",
-      projected: "On track",
-      onTrack: true
-    },
-    {
-      id: 2,
-      title: "Finish Algebra module",
-      subject: "Mathematics",
-      progress: 45,
-      deadline: "Dec 20",
-      projected: "2 days ahead",
-      onTrack: true
-    },
-    {
-      id: 3,
-      title: "Master essay structure",
-      subject: "English",
-      progress: 32,
-      deadline: "Dec 18",
-      projected: "1 day behind",
-      onTrack: false
-    }
-  ];
+interface AssessmentForm {
+  subject: string;
+  title: string;
+  assessmentType: string;
+  dueDate: string;
+  dueTime: string;
+  weighting: string;
+  difficulty: string;
+  confidence: string;
+  notes: string;
+}
 
-  const aiRecommendations = [
-    {
-      id: 1,
-      icon: Lightbulb,
-      title: "Peak Performance Window",
-      advice: "Your best focus time is Thursday mornings. Schedule difficult topics then.",
-      detail: "Based on your study patterns over the last 4 weeks, your concentration peaks between 9-11 AM on Thursdays. You complete tasks 40% faster and retain 30% more information during this window. Consider scheduling your most challenging subjects like advanced algebra or complex essay writing during these hours for maximum effectiveness."
-    },
-    {
-      id: 2,
-      icon: Target,
-      title: "Consistency Boost",
-      advice: "You're 85% consistent! Add 1 more session on Wednesdays to hit 100%.",
-      detail: "You've maintained study sessions 6 out of 7 days this week. Wednesday is your least active day with only 1.8 hours logged. By adding just one 25-minute Pomodoro session on Wednesdays, you'll achieve a perfect weekly consistency score. Consistent daily practice has been shown to improve long-term retention by up to 50%."
-    },
-    {
-      id: 3,
-      icon: Zap,
-      title: "Quick Win",
-      advice: "Complete 2 more sessions this week to unlock 'Weekly Champion' badge.",
-      detail: "You're only 2 focus sessions away from earning the 'Weekly Champion' achievement worth 50 points! This badge is awarded to students who complete 20+ sessions in a single week. Your current pace: 18 sessions. Suggested action: Complete one session today and one tomorrow to claim your reward and boost your progress ranking."
-    }
-  ];
+const emptyAssessmentForm: AssessmentForm = {
+  subject: "",
+  title: "",
+  assessmentType: "Exam",
+  dueDate: "",
+  dueTime: "09:00",
+  weighting: "",
+  difficulty: "3",
+  confidence: "3",
+  notes: "",
+};
 
-  const focusAreas = [
-    { name: "Mathematics", hours: 8.5, percentage: 45, color: "#A78BFA", size: 120 },
-    { name: "English", hours: 6.2, percentage: 32, color: "#C4B5FD", size: 100 },
-    { name: "Flashcards", hours: 4.3, percentage: 23, color: "#DDD6FE", size: 80 },
-  ];
+function getDueDate(work: GoogleClassroomCourseWork): Date | null {
+  if (!work.dueDate) return null;
 
-  const handleAchievementClick = (achievement: any) => {
-    if (achievement.earned) {
-      setSelectedAchievement(achievement);
-      setShowAchievementModal(true);
-      setShowConfetti(true);
-      setTimeout(() => setShowConfetti(false), 3000);
-    }
-  };
+  return new Date(
+    work.dueDate.year,
+    work.dueDate.month - 1,
+    work.dueDate.day,
+    work.dueTime?.hours ?? 23,
+    work.dueTime?.minutes ?? 59,
+    0,
+    0
+  );
+}
 
-  // If showing AI Insights, render full page
-  if (showAIInsights) {
-    return <AIInsightsPage onBack={() => setShowAIInsights(false)} />;
+function isSubmitted(work: ClassroomWorkItem) {
+  return (
+    work.submission?.state === "TURNED_IN" ||
+    work.submission?.state === "RETURNED"
+  );
+}
+
+function getPercentage(work: ClassroomWorkItem): number | null {
+  const grade = work.submission?.assignedGrade;
+  const maxPoints = work.maxPoints;
+
+  if (
+    typeof grade !== "number" ||
+    typeof maxPoints !== "number" ||
+    maxPoints <= 0
+  ) {
+    return null;
   }
 
+  return Math.max(0, Math.min(100, (grade / maxPoints) * 100));
+}
+
+function formatShortDate(date: Date) {
+  return date.toLocaleDateString("en-AU", {
+    day: "numeric",
+    month: "short",
+  });
+}
+
+function daysFromNow(date: Date) {
+  const now = new Date();
+  const start = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate()
+  );
+  const target = new Date(
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate()
+  );
+
+  return Math.ceil(
+    (target.getTime() - start.getTime()) /
+      (1000 * 60 * 60 * 24)
+  );
+}
+
+export function ProgressPage({ onNavigate }: ProgressPageProps) {
+  const { googleProviderToken, studentId } = useAuth();
+
+  const [showAIInsights, setShowAIInsights] = useState(false);
+  const [courses, setCourses] = useState<GoogleClassroomCourse[]>([]);
+  const [work, setWork] = useState<ClassroomWorkItem[]>([]);
+  const [schoolAssessments, setSchoolAssessments] =
+    useState<SchoolAssessment[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [assessmentLoading, setAssessmentLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [courseFilter, setCourseFilter] = useState("all");
+  const [graphMode, setGraphMode] =
+    useState<"results" | "completion">("results");
+  const [addOpen, setAddOpen] = useState(false);
+  const [form, setForm] =
+    useState<AssessmentForm>(emptyAssessmentForm);
+  const [savingAssessment, setSavingAssessment] = useState(false);
+
+  const loadSchoolAssessments = async () => {
+    if (!studentId) {
+      setSchoolAssessments([]);
+      return;
+    }
+
+    setAssessmentLoading(true);
+
+    const { data, error: assessmentError } = await supabase
+      .from("school_assessments")
+      .select(
+        "id, student_id, subject, title, assessment_type, due_at, weighting, difficulty, confidence, notes"
+      )
+      .eq("student_id", studentId)
+      .order("due_at", { ascending: true });
+
+    if (assessmentError) {
+      console.error(
+        "School assessments load failed:",
+        assessmentError
+      );
+      setAssessmentLoading(false);
+      return;
+    }
+
+    setSchoolAssessments((data ?? []) as SchoolAssessment[]);
+    setAssessmentLoading(false);
+  };
+
+  useEffect(() => {
+    void loadSchoolAssessments();
+  }, [studentId]);
+
+  useEffect(() => {
+    const load = async () => {
+      if (!googleProviderToken) {
+        setCourses([]);
+        setWork([]);
+        return;
+      }
+
+      setLoading(true);
+      setError(null);
+
+      try {
+        const liveCourses =
+          await getGoogleClassroomCourses(googleProviderToken);
+
+        setCourses(liveCourses);
+
+        const all = await Promise.all(
+          liveCourses.map(async (course) => {
+            const [coursework, submissions] = await Promise.all([
+              getGoogleClassroomCoursework(
+                course.id,
+                googleProviderToken
+              ),
+              getMyGoogleClassroomSubmissions(
+                course.id,
+                googleProviderToken
+              ),
+            ]);
+
+            return coursework.map(
+              (item): ClassroomWorkItem => ({
+                ...item,
+                courseName: course.name,
+                submission: submissions.find(
+                  (submission) =>
+                    submission.courseWorkId === item.id
+                ),
+              })
+            );
+          })
+        );
+
+        setWork(all.flat());
+      } catch (err) {
+        console.error("Progress load failed:", err);
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Unable to load Google Classroom progress."
+        );
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    void load();
+  }, [googleProviderToken]);
+
+  const data = useMemo(() => {
+    const now = new Date();
+    const todayStart = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate()
+    );
+
+    const recentCutoff = new Date(todayStart);
+    recentCutoff.setDate(recentCutoff.getDate() - 180);
+
+    const recent = work.filter((item) => {
+      const due = getDueDate(item);
+      return !due || due >= recentCutoff;
+    });
+
+    const filtered =
+      courseFilter === "all"
+        ? recent
+        : recent.filter((item) => item.courseId === courseFilter);
+
+    const completed = filtered.filter(isSubmitted);
+
+    const overdue = filtered.filter((item) => {
+      const due = getDueDate(item);
+      return (
+        !isSubmitted(item) &&
+        Boolean(due) &&
+        due! < todayStart
+      );
+    });
+
+    const graded = filtered.filter(
+      (item) =>
+        typeof item.submission?.assignedGrade === "number"
+    );
+
+    const percentages = graded
+      .map(getPercentage)
+      .filter((value): value is number => value !== null);
+
+    const overallAverage =
+      percentages.length > 0
+        ? percentages.reduce((a, b) => a + b, 0) /
+          percentages.length
+        : null;
+
+    const completionRate =
+      filtered.length > 0
+        ? (completed.length / filtered.length) * 100
+        : 0;
+
+    const summaries: CourseSummary[] = courses
+      .map((course) => {
+        const items = recent.filter(
+          (item) => item.courseId === course.id
+        );
+
+        if (items.length === 0) return null;
+
+        const done = items.filter(isSubmitted);
+
+        const late = items.filter((item) => {
+          const due = getDueDate(item);
+
+          return (
+            !isSubmitted(item) &&
+            Boolean(due) &&
+            due! < todayStart
+          );
+        });
+
+        const coursePercentages = items
+          .map(getPercentage)
+          .filter((value): value is number => value !== null);
+
+        return {
+          id: course.id,
+          name: course.name,
+          total: items.length,
+          completed: done.length,
+          overdue: late.length,
+          graded: coursePercentages.length,
+          completionRate:
+            items.length > 0
+              ? (done.length / items.length) * 100
+              : 0,
+          averagePercent:
+            coursePercentages.length > 0
+              ? coursePercentages.reduce((a, b) => a + b, 0) /
+                coursePercentages.length
+              : null,
+        };
+      })
+      .filter((value): value is CourseSummary => value !== null);
+
+    const recentResults = graded
+      .slice()
+      .sort(
+        (a, b) =>
+          (getDueDate(b)?.getTime() ?? 0) -
+          (getDueDate(a)?.getTime() ?? 0)
+      )
+      .slice(0, 15);
+
+    const resultGraph = graded
+      .map((item) => {
+        const date = getDueDate(item);
+        const percentage = getPercentage(item);
+
+        if (!date || percentage === null) return null;
+
+        return {
+          timestamp: date.getTime(),
+          label: formatShortDate(date),
+          value: Math.round(percentage),
+          title: item.title,
+          course: item.courseName,
+        };
+      })
+      .filter(
+        (
+          value
+        ): value is {
+          timestamp: number;
+          label: string;
+          value: number;
+          title: string;
+          course: string;
+        } => value !== null
+      )
+      .sort((a, b) => a.timestamp - b.timestamp)
+      .slice(-12);
+
+    const completionGraph = Array.from({ length: 8 }, (_, index) => {
+      const start = new Date(todayStart);
+      start.setDate(todayStart.getDate() - (7 - index) * 7);
+
+      const end = new Date(start);
+      end.setDate(start.getDate() + 7);
+
+      const dueThisWeek = recent.filter((item) => {
+        const due = getDueDate(item);
+        return Boolean(due) && due! >= start && due! < end;
+      });
+
+      const doneThisWeek = dueThisWeek.filter(isSubmitted);
+
+      return {
+        label: formatShortDate(start),
+        value:
+          dueThisWeek.length > 0
+            ? Math.round(
+                (doneThisWeek.length / dueThisWeek.length) * 100
+              )
+            : 0,
+      };
+    });
+
+    const classroomUpcoming = recent
+      .filter((item) => {
+        const due = getDueDate(item);
+        return (
+          !isSubmitted(item) &&
+          Boolean(due) &&
+          due! >= todayStart
+        );
+      })
+      .map((item) => ({
+        id: `classroom-${item.courseId}-${item.id}`,
+        source: "Google Classroom" as const,
+        subject: item.courseName,
+        title: item.title,
+        type: "Assignment",
+        dueAt: getDueDate(item)!,
+        weighting: null as number | null,
+        confidence: null as number | null,
+      }));
+
+    const manualUpcoming = schoolAssessments
+      .filter((item) => new Date(item.due_at) >= todayStart)
+      .map((item) => ({
+        id: `school-${item.id}`,
+        source: "School" as const,
+        subject: item.subject,
+        title: item.title,
+        type: item.assessment_type,
+        dueAt: new Date(item.due_at),
+        weighting: item.weighting,
+        confidence: item.confidence,
+      }));
+
+    const upcomingAssessments = [
+      ...classroomUpcoming,
+      ...manualUpcoming,
+    ]
+      .sort((a, b) => a.dueAt.getTime() - b.dueAt.getTime())
+      .slice(0, 8);
+
+    return {
+      filtered,
+      completed,
+      overdue,
+      graded,
+      overallAverage,
+      completionRate,
+      summaries,
+      recentResults,
+      resultGraph,
+      completionGraph,
+      upcomingAssessments,
+    };
+  }, [
+    courses,
+    work,
+    courseFilter,
+    schoolAssessments,
+  ]);
+
+  const saveAssessment = async () => {
+    if (
+      !studentId ||
+      !form.subject.trim() ||
+      !form.title.trim() ||
+      !form.dueDate
+    ) {
+      return;
+    }
+
+    setSavingAssessment(true);
+
+    const dueAt = new Date(
+      `${form.dueDate}T${form.dueTime || "09:00"}`
+    );
+
+    const { error: insertError } = await supabase
+      .from("school_assessments")
+      .insert({
+        student_id: studentId,
+        subject: form.subject.trim(),
+        title: form.title.trim(),
+        assessment_type: form.assessmentType,
+        due_at: dueAt.toISOString(),
+        weighting: form.weighting
+          ? Number(form.weighting)
+          : null,
+        difficulty: form.difficulty
+          ? Number(form.difficulty)
+          : null,
+        confidence: form.confidence
+          ? Number(form.confidence)
+          : null,
+        notes: form.notes.trim() || null,
+      });
+
+    setSavingAssessment(false);
+
+    if (insertError) {
+      console.error("Assessment save failed:", insertError);
+      return;
+    }
+
+    setForm(emptyAssessmentForm);
+    setAddOpen(false);
+    await loadSchoolAssessments();
+  };
+
+  if (showAIInsights) {
+    return (
+      <AIInsightsPage
+        onBack={() => setShowAIInsights(false)}
+        onNavigateToFocus={() => onNavigate?.("study")}
+      />
+    );
+  }
+
+  const graphData =
+    graphMode === "results"
+      ? data.resultGraph
+      : data.completionGraph;
+
   return (
-    <div 
-      className="min-h-screen pb-24 relative overflow-hidden"
-      style={{ 
-        background: 'linear-gradient(to bottom, #FFF9EB 0%, #FFFFFF 50%, #FFF7D9 100%)',
+    <div
+      className="min-h-full pb-8 relative overflow-hidden"
+      style={{
+        background:
+          "linear-gradient(180deg, #FFF9E9 0%, #FFFFFF 38%, #F7F5FF 100%)",
       }}
     >
-      {/* Additional soft overlay */}
-      <div 
-        className="absolute inset-0 pointer-events-none" 
+      <div
+        className="absolute inset-0 pointer-events-none"
         style={{
-          background: 'radial-gradient(circle at top right, rgba(255,213,0,0.08), transparent 60%)',
-          opacity: 0.3
+          background:
+            "radial-gradient(circle at 95% 0%, rgba(255,213,0,.22), transparent 32%), radial-gradient(circle at 0% 45%, rgba(167,139,250,.10), transparent 30%)",
         }}
       />
 
-      <div className="p-6 space-y-5 relative">
-        {/* Header */}
+      <div className="p-5 space-y-4 relative">
         <motion.div
-          initial={{ opacity: 0, y: -20 }}
+          initial={{ opacity: 0, y: -12 }}
           animate={{ opacity: 1, y: 0 }}
-          className="mb-6"
+          className="flex items-end justify-between gap-3"
         >
-          <h1 
-            className="mt-0 mb-1" 
-            style={{ 
-              fontFamily: 'Inter, sans-serif',
-              fontWeight: 700,
-              fontSize: '32px',
-              color: '#000000',
-              letterSpacing: '-0.02em'
-            }}
+          <div>
+            <h1 className="m-0 text-[30px] font-bold tracking-tight">
+              Your Progress
+            </h1>
+            <p className="m-0 mt-1 text-sm text-[#656565]">
+              Results, deadlines & study priorities
+            </p>
+          </div>
+
+          <Button
+            size="sm"
+            onClick={() => setAddOpen(true)}
+            className="rounded-xl bg-black text-white"
           >
-            Your Progress
-          </h1>
-          <p 
-            className="text-sm mb-0" 
-            style={{ 
-              fontFamily: 'Inter, sans-serif',
-              fontWeight: 500,
-              color: '#595959'
-            }}
-          >
-            Track your study journey and achievements
-          </p>
+            <Plus className="w-4 h-4 mr-1" />
+            Assessment
+          </Button>
         </motion.div>
 
-        {/* Begin Focus Session CTA */}
-        <motion.div
-          initial={{ opacity: 0, scale: 0.98 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ delay: 0.1 }}
-          whileHover={{ scale: 1.02, y: -3 }}
-          whileTap={{ scale: 0.98 }}
-          onClick={() => onNavigate && onNavigate('study')}
-          className="cursor-pointer"
+        <motion.button
+          type="button"
+          onClick={() => setShowAIInsights(true)}
+          whileHover={{ y: -2 }}
+          whileTap={{ scale: 0.99 }}
+          className="w-full text-left"
         >
-          <Card 
-            className="border-0 p-5"
-            style={{ 
-              borderRadius: '18px',
-              boxShadow: '0px 8px 24px rgba(255,213,0,0.25), 0px 4px 12px rgba(0,0,0,0.08)',
-              background: 'linear-gradient(135deg, #FFD500 0%, #FFC700 100%)'
+          <Card
+            className="border-0 p-5 overflow-hidden relative"
+            style={{
+              borderRadius: "22px",
+              background:
+                "linear-gradient(135deg, #151515 0%, #28211A 52%, #4A3D08 100%)",
+              boxShadow: "0 12px 30px rgba(0,0,0,.16)",
             }}
           >
-            <div className="flex items-center justify-between">
+            <div
+              className="absolute -right-8 -top-10 w-32 h-32 rounded-full"
+              style={{
+                background: "rgba(255,213,0,.22)",
+                filter: "blur(4px)",
+              }}
+            />
+
+            <div className="relative flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div 
-                  className="w-12 h-12 rounded-xl flex items-center justify-center"
-                  style={{ background: 'rgba(0,0,0,0.1)' }}
-                >
-                  <Clock className="w-6 h-6" style={{ color: '#000000', strokeWidth: 2.5 }} />
+                <div className="w-11 h-11 rounded-2xl flex items-center justify-center bg-[#FFD500]">
+                  <Sparkles className="w-5 h-5 text-black" />
                 </div>
                 <div>
-                  <h3 
-                    className="mb-0" 
-                    style={{ 
-                      fontFamily: 'Inter, sans-serif',
-                      fontWeight: 700,
-                      fontSize: '18px',
-                      color: '#000000'
-                    }}
-                  >
-                    Begin Focus Session
+                  <p className="m-0 text-[11px] font-bold tracking-widest text-[#FFD500] uppercase">
+                    Marquis
+                  </p>
+                  <h3 className="m-0 mt-1 text-base font-bold text-white">
+                    Insights & Study Planner
                   </h3>
-                  <p 
-                    className="text-sm mb-0" 
-                    style={{ 
-                      fontFamily: 'Inter, sans-serif',
-                      fontWeight: 500,
-                      color: 'rgba(0,0,0,0.7)'
-                    }}
-                  >
-                    Start a Pomodoro timer
+                  <p className="m-0 mt-1 text-xs text-white/60">
+                    Classroom + your school assessments
                   </p>
                 </div>
               </div>
-              <ChevronRight className="w-6 h-6" style={{ color: 'rgba(0,0,0,0.4)' }} />
+              <ChevronRight className="w-5 h-5 text-white/60" />
             </div>
           </Card>
-        </motion.div>
+        </motion.button>
 
-        {/* Metrics Overview - 4 Cards */}
-        <div className="grid grid-cols-2 gap-3">
-          {/* Today */}
-          <UnifiedCard delay={0.15} glow>
-            <div className="p-4">
-              <div className="flex items-center gap-2 mb-3">
-                <div 
-                  className="w-10 h-10 rounded-xl flex items-center justify-center"
-                  style={{ background: 'rgba(255,213,0,0.15)' }}
-                >
-                  <Target className="w-5 h-5" style={{ color: '#FFD500', strokeWidth: 2.5 }} />
-                </div>
-                <h3 
-                  className="text-xs mb-0" 
-                  style={{ 
-                    fontFamily: 'Inter, sans-serif',
-                    fontWeight: 600,
-                    color: '#595959',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.05em'
-                  }}
-                >
-                  Today
-                </h3>
-              </div>
-              <div className="relative">
-                <div 
-                  className="absolute -inset-2 rounded-full"
-                  style={{ 
-                    background: 'radial-gradient(circle, rgba(255,213,0,0.1) 0%, transparent 70%)',
-                    filter: 'blur(8px)'
-                  }}
-                />
-                <p 
-                  className="mb-0 relative" 
-                  style={{ 
-                    fontFamily: 'Inter, sans-serif',
-                    fontWeight: 800,
-                    fontSize: '32px',
-                    color: '#000000',
-                    lineHeight: 1
-                  }}
-                >
-                  2.5h
-                </p>
-              </div>
-              <p 
-                className="text-xs mt-2 mb-0" 
-                style={{ 
-                  fontFamily: 'Inter, sans-serif',
-                  fontWeight: 500,
-                  color: '#595959'
-                }}
-              >
-                3 sessions
-              </p>
-            </div>
-          </UnifiedCard>
-
-          {/* This Week */}
-          <UnifiedCard delay={0.2} glow>
-            <div className="p-4">
-              <div className="flex items-center gap-2 mb-3">
-                <div 
-                  className="w-10 h-10 rounded-xl flex items-center justify-center"
-                  style={{ background: 'rgba(255,213,0,0.15)' }}
-                >
-                  <Calendar className="w-5 h-5" style={{ color: '#FFD500', strokeWidth: 2.5 }} />
-                </div>
-                <h3 
-                  className="text-xs mb-0" 
-                  style={{ 
-                    fontFamily: 'Inter, sans-serif',
-                    fontWeight: 600,
-                    color: '#595959',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.05em'
-                  }}
-                >
-                  This Week
-                </h3>
-              </div>
-              <div className="relative">
-                <div 
-                  className="absolute -inset-2 rounded-full"
-                  style={{ 
-                    background: 'radial-gradient(circle, rgba(255,213,0,0.1) 0%, transparent 70%)',
-                    filter: 'blur(8px)'
-                  }}
-                />
-                <p 
-                  className="mb-0 relative" 
-                  style={{ 
-                    fontFamily: 'Inter, sans-serif',
-                    fontWeight: 800,
-                    fontSize: '32px',
-                    color: '#000000',
-                    lineHeight: 1
-                  }}
-                >
-                  {currentWeekTotal}h
-                </p>
-              </div>
-              <p 
-                className="text-xs mt-2 mb-0 flex items-center gap-1" 
-                style={{ 
-                  fontFamily: 'Inter, sans-serif',
-                  fontWeight: 600,
-                  color: '#10B981'
-                }}
-              >
-                <TrendingUp className="w-3 h-3" />
-                +{weeklyChange.toFixed(0)}%
-              </p>
-            </div>
-          </UnifiedCard>
-
-          {/* All Time */}
-          <UnifiedCard delay={0.25}>
-            <div className="p-4">
-              <div className="flex items-center gap-2 mb-3">
-                <div 
-                  className="w-10 h-10 rounded-xl flex items-center justify-center"
-                  style={{ background: 'rgba(255,213,0,0.15)' }}
-                >
-                  <BarChart3 className="w-5 h-5" style={{ color: '#FFD500', strokeWidth: 2.5 }} />
-                </div>
-                <h3 
-                  className="text-xs mb-0" 
-                  style={{ 
-                    fontFamily: 'Inter, sans-serif',
-                    fontWeight: 600,
-                    color: '#595959',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.05em'
-                  }}
-                >
-                  All Time
-                </h3>
-              </div>
-              <p 
-                className="mb-0" 
-                style={{ 
-                  fontFamily: 'Inter, sans-serif',
-                  fontWeight: 800,
-                  fontSize: '32px',
-                  color: '#000000',
-                  lineHeight: 1
-                }}
-              >
-                156h
-              </p>
-              <p 
-                className="text-xs mt-2 mb-0" 
-                style={{ 
-                  fontFamily: 'Inter, sans-serif',
-                  fontWeight: 500,
-                  color: '#595959'
-                }}
-              >
-                82 sessions
-              </p>
-            </div>
-          </UnifiedCard>
-
-          {/* AI Insights */}
-          <UnifiedCard delay={0.3}>
-            <div 
-              className="p-4 cursor-pointer"
-              onClick={() => setShowAIInsights(true)}
-            >
-              <div className="flex items-center gap-2 mb-3">
-                <div 
-                  className="w-10 h-10 rounded-xl flex items-center justify-center"
-                  style={{ background: 'rgba(167,139,250,0.15)' }}
-                >
-                  <Sparkles className="w-5 h-5" style={{ color: '#A78BFA', strokeWidth: 2.5 }} />
-                </div>
-                <h3 
-                  className="text-xs mb-0" 
-                  style={{ 
-                    fontFamily: 'Inter, sans-serif',
-                    fontWeight: 600,
-                    color: '#595959',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.05em'
-                  }}
-                >
-                  AI Insights
-                </h3>
-              </div>
-              <p 
-                className="mb-0 text-xs" 
-                style={{ 
-                  fontFamily: 'Inter, sans-serif',
-                  fontWeight: 500,
-                  color: '#383838',
-                  lineHeight: 1.4
-                }}
-              >
-                View personalized tips
-              </p>
-              <ChevronRight className="w-4 h-4 mt-2" style={{ color: '#A78BFA' }} />
-            </div>
-          </UnifiedCard>
-        </div>
-
-        {/* Study Streak */}
-        <UnifiedCard delay={0.35} glow>
-          <div className="p-5">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <motion.div 
-                  className="w-16 h-16 rounded-2xl flex items-center justify-center relative"
-                  style={{ 
-                    background: 'linear-gradient(145deg, #FFD500, #FFC700)',
-                    boxShadow: '0px 8px 16px rgba(255,213,0,0.25)'
-                  }}
-                  animate={{ 
-                    scale: [1, 1.05, 1],
-                  }}
-                  transition={{ 
-                    duration: 2,
-                    repeat: Infinity,
-                    repeatType: "reverse"
-                  }}
-                >
-                  <Flame className="w-8 h-8" style={{ color: '#000000', strokeWidth: 2.5 }} />
-                  <div 
-                    className="absolute -top-1 -right-1 w-7 h-7 rounded-full flex items-center justify-center"
-                    style={{ 
-                      background: '#000000',
-                      fontFamily: 'Inter, sans-serif',
-                      fontWeight: 700,
-                      fontSize: '12px',
-                      color: '#FFD500'
-                    }}
-                  >
-                    {currentStreak}
-                  </div>
-                </motion.div>
-                <div>
-                  <p 
-                    className="mb-0" 
-                    style={{ 
-                      fontFamily: 'Inter, sans-serif',
-                      fontWeight: 800,
-                      fontSize: '28px',
-                      color: '#000000',
-                      lineHeight: 1
-                    }}
-                  >
-                    {currentStreak} Days
-                  </p>
-                  <p 
-                    className="text-sm mb-0 mt-1" 
-                    style={{ 
-                      fontFamily: 'Inter, sans-serif',
-                      fontWeight: 500,
-                      color: '#595959'
-                    }}
-                  >
-                    Current streak 🔥
-                  </p>
-                </div>
-              </div>
-              <div className="text-right">
-                <p 
-                  className="text-xs mb-1" 
-                  style={{ 
-                    fontFamily: 'Inter, sans-serif',
-                    fontWeight: 600,
-                    color: '#595959',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.05em'
-                  }}
-                >
-                  Next Goal
-                </p>
-                <p 
-                  className="mb-0" 
-                  style={{ 
-                    fontFamily: 'Inter, sans-serif',
-                    fontWeight: 700,
-                    fontSize: '20px',
-                    color: '#000000'
-                  }}
-                >
-                  {nextStreakMilestone} days
-                </p>
-              </div>
-            </div>
-
-            <div className="mt-4">
-              <div 
-                className="h-2.5 rounded-full overflow-hidden"
-                style={{ background: '#F3F4F6' }}
-              >
-                <motion.div 
-                  className="h-full rounded-full relative"
-                  initial={{ width: 0 }}
-                  animate={{ width: `${streakProgress}%` }}
-                  transition={{ duration: 1.5, ease: "easeOut", delay: 0.5 }}
-                  style={{ 
-                    background: 'linear-gradient(90deg, #FFD500, #FFC700)'
-                  }}
-                >
-                  {/* Animated shimmer */}
-                  <motion.div
-                    className="absolute inset-0"
-                    style={{
-                      background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent)'
-                    }}
-                    animate={{
-                      x: ['-100%', '200%']
-                    }}
-                    transition={{
-                      duration: 2,
-                      repeat: Infinity,
-                      repeatDelay: 1
-                    }}
-                  />
-                </motion.div>
-              </div>
-              <p 
-                className="text-xs text-center mt-2 mb-0" 
-                style={{ 
-                  fontFamily: 'Inter, sans-serif',
-                  fontWeight: 500,
-                  color: '#595959'
-                }}
-              >
-                {nextStreakMilestone - currentStreak} more days to unlock reward! 🏆
-              </p>
-            </div>
-          </div>
-        </UnifiedCard>
-
-        {/* Weekly Activity Chart */}
-        <UnifiedCard delay={0.4}>
-          <div className="p-5">
-            <div className="flex items-center justify-between mb-4">
-              <h2 
-                className="mb-0" 
-                style={{ 
-                  fontFamily: 'Inter, sans-serif',
-                  fontWeight: 600,
-                  fontSize: '20px',
-                  color: '#000000'
-                }}
-              >
-                Weekly Activity
-              </h2>
-              
-              {/* Pill-style toggles */}
-              <div 
-                className="flex gap-1 p-1 rounded-full"
-                style={{ background: '#F3F4F6' }}
-              >
-                <motion.button
-                  onClick={() => setChartMetric('hours')}
-                  className="px-3 py-1 rounded-full text-xs transition-all"
-                  style={{
-                    background: chartMetric === 'hours' ? '#FFD500' : 'transparent',
-                    color: chartMetric === 'hours' ? '#000000' : '#595959',
-                    fontFamily: 'Inter, sans-serif',
-                    fontWeight: 600,
-                    border: 'none',
-                    cursor: 'pointer'
-                  }}
-                  whileTap={{ scale: 0.95 }}
-                >
-                  Hours
-                </motion.button>
-                <motion.button
-                  onClick={() => setChartMetric('sessions')}
-                  className="px-3 py-1 rounded-full text-xs transition-all"
-                  style={{
-                    background: chartMetric === 'sessions' ? '#FFD500' : 'transparent',
-                    color: chartMetric === 'sessions' ? '#000000' : '#595959',
-                    fontFamily: 'Inter, sans-serif',
-                    fontWeight: 600,
-                    border: 'none',
-                    cursor: 'pointer'
-                  }}
-                  whileTap={{ scale: 0.95 }}
-                >
-                  Sessions
-                </motion.button>
-              </div>
-            </div>
-
-            <p 
-              className="text-sm mb-6" 
-              style={{ 
-                fontFamily: 'Inter, sans-serif',
-                fontWeight: 500,
-                color: '#383838'
-              }}
-            >
-              {weeklyChange > 0 ? '📈' : '📉'} {weeklyChange > 0 ? '+' : ''}{weeklyChange.toFixed(1)}% vs last week
-            </p>
-
-            <div style={{ marginTop: '8px' }}>
-              <ResponsiveContainer width="100%" height={240}>
-                <LineChart data={studyHistoryData} margin={{ top: 30, right: 10, left: -20, bottom: 20 }}>
-                  <defs>
-                    <linearGradient id="lineGradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="rgba(255,213,0,0.2)" />
-                      <stop offset="100%" stopColor="rgba(255,213,0,0)" />
-                    </linearGradient>
-                    <filter id="glow">
-                      <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
-                      <feMerge>
-                        <feMergeNode in="coloredBlur"/>
-                        <feMergeNode in="SourceGraphic"/>
-                      </feMerge>
-                    </filter>
-                  </defs>
-                  <CartesianGrid 
-                    strokeDasharray="3 3" 
-                    stroke="#F3F4F6" 
-                    vertical={false}
-                  />
-                  <XAxis 
-                    dataKey="day" 
-                    tick={{ fontSize: 11, fill: '#595959', fontFamily: 'Inter, sans-serif', fontWeight: 600 }}
-                    axisLine={false}
-                    tickLine={false}
-                    dy={10}
-                  />
-                  <YAxis 
-                    tick={{ fontSize: 11, fill: '#595959', fontFamily: 'Inter, sans-serif', fontWeight: 600 }}
-                    axisLine={false}
-                    tickLine={false}
-                  />
-                  <Tooltip content={<CustomTooltip />} />
-                  <Line
-                    type="monotone"
-                    dataKey={chartMetric}
-                    stroke="#FFD500"
-                    strokeWidth={4}
-                    fill="url(#lineGradient)"
-                    dot={<CustomDot />}
-                    filter="url(#glow)"
-                    animationDuration={1500}
-                    animationEasing="ease-out"
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-        </UnifiedCard>
-
-        {/* Weekly Orbit Summary */}
-        <UnifiedCard delay={0.45}>
-          <div className="flex">
-            <div 
-              className="w-1.5 rounded-l-2xl"
-              style={{ background: 'linear-gradient(180deg, #A78BFA, #C4B5FD)' }}
-            />
-            <div className="p-4 flex-1">
-              <div className="flex items-center gap-2 mb-2">
-                <Circle className="w-4 h-4" style={{ color: '#A78BFA', fill: '#A78BFA' }} />
-                <h3 
-                  className="mb-0 text-sm" 
-                  style={{ 
-                    fontFamily: 'Inter, sans-serif',
-                    fontWeight: 600,
-                    color: '#000000'
-                  }}
-                >
-                  Weekly Orbit Summary
-                </h3>
-              </div>
-              <p 
-                className="text-xs mb-0" 
-                style={{ 
-                  fontFamily: 'Inter, sans-serif',
-                  fontWeight: 500,
-                  color: '#383838',
-                  lineHeight: 1.5
-                }}
-              >
-                You spent <span style={{ fontWeight: 700, color: '#000000' }}>45% on Mathematics</span>, 32% on English, and 23% on review.
-              </p>
-            </div>
-          </div>
-        </UnifiedCard>
-
-        {/* AI Insights Tabs */}
-        <UnifiedCard delay={0.55}>
-          <div className="p-5">
-            <h2 
-              className="mb-4" 
-              style={{ 
-                fontFamily: 'Inter, sans-serif',
-                fontWeight: 600,
-                fontSize: '20px',
-                color: '#000000'
-              }}
-            >
-              AI Insights
-            </h2>
-
-            {/* Segmented Control */}
-            <div 
-              className="flex gap-1 p-1 rounded-xl mb-4"
-              style={{ background: '#F3F4F6' }}
-            >
-              {(['trends', 'tips', 'predictions'] as const).map((tab) => (
-                <motion.button
-                  key={tab}
-                  onClick={() => setActiveInsightTab(tab)}
-                  className="flex-1 px-3 py-2 rounded-lg text-xs transition-all relative"
-                  style={{
-                    background: activeInsightTab === tab ? '#A78BFA' : 'transparent',
-                    color: activeInsightTab === tab ? '#FFFFFF' : '#595959',
-                    fontFamily: 'Inter, sans-serif',
-                    fontWeight: 600,
-                    border: 'none',
-                    cursor: 'pointer',
-                    textTransform: 'capitalize',
-                    boxShadow: activeInsightTab === tab ? '0px 2px 8px rgba(167,139,250,0.3)' : 'none',
-                    transform: activeInsightTab === tab ? 'translateY(-1px)' : 'none'
-                  }}
-                  whileTap={{ scale: 0.97 }}
-                >
-                  {tab}
-                </motion.button>
-              ))}
-            </div>
-
-            {/* Insight Content */}
-            <AnimatePresence mode="wait">
-              <motion.div
-                key={activeInsightTab}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                transition={{ duration: 0.2 }}
-              >
-                {activeInsightTab === 'trends' && (
-                  <div className="space-y-3">
-                    <div 
-                      className="p-3 rounded-xl flex items-start gap-3"
-                      style={{ background: '#FAFAFA' }}
-                    >
-                      <div 
-                        className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
-                        style={{ background: 'rgba(167,139,250,0.15)' }}
-                      >
-                        <TrendingUp className="w-4 h-4" style={{ color: '#A78BFA' }} />
-                      </div>
-                      <div className="flex-1">
-                        <p 
-                          className="text-xs mb-0" 
-                          style={{ 
-                            fontFamily: 'Inter, sans-serif',
-                            fontWeight: 600,
-                            color: '#000000',
-                            lineHeight: 1.5
-                          }}
-                        >
-                          Your study time increased 14% this month
-                        </p>
-                      </div>
-                    </div>
-                  </div>
+        {!googleProviderToken ? (
+          <Card className="p-5 border-0 rounded-2xl">
+            Sign in with Google to load Classroom progress.
+          </Card>
+        ) : loading ? (
+          <Card className="p-5 border-0 rounded-2xl flex gap-3">
+            <Clock className="w-5 h-5" />
+            Loading your progress...
+          </Card>
+        ) : error ? (
+          <Card className="p-5 border-0 rounded-2xl text-red-700">
+            {error}
+          </Card>
+        ) : (
+          <>
+            <div className="grid grid-cols-2 gap-3">
+              <MetricCard
+                label="Average"
+                value={
+                  data.overallAverage === null
+                    ? "—"
+                    : `${Math.round(data.overallAverage)}%`
+                }
+                caption={`${data.graded.length} graded`}
+                variant="yellow"
+                icon={<TrendingUp className="w-5 h-5" />}
+              />
+              <MetricCard
+                label="Completion"
+                value={`${Math.round(data.completionRate)}%`}
+                caption={`${data.completed.length}/${data.filtered.length} tasks`}
+                variant="green"
+                icon={<CheckCircle2 className="w-5 h-5" />}
+              />
+              <MetricCard
+                label="Overdue"
+                value={String(data.overdue.length)}
+                caption="Incomplete"
+                variant="coral"
+                icon={<AlertCircle className="w-5 h-5" />}
+              />
+              <MetricCard
+                label="Assessments"
+                value={String(
+                  data.upcomingAssessments.filter(
+                    (item) => item.source === "School"
+                  ).length
                 )}
-                {activeInsightTab === 'tips' && (
-                  <div className="space-y-3">
-                    <div 
-                      className="p-3 rounded-xl flex items-start gap-3"
-                      style={{ background: '#FAFAFA' }}
-                    >
-                      <div 
-                        className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
-                        style={{ background: 'rgba(167,139,250,0.15)' }}
-                      >
-                        <Brain className="w-4 h-4" style={{ color: '#A78BFA' }} />
-                      </div>
-                      <div className="flex-1">
-                        <p 
-                          className="text-xs mb-0" 
-                          style={{ 
-                            fontFamily: 'Inter, sans-serif',
-                            fontWeight: 600,
-                            color: '#000000',
-                            lineHeight: 1.5
-                          }}
-                        >
-                          Try reviewing flashcards before bed for better retention
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                )}
-                {activeInsightTab === 'predictions' && (
-                  <div className="space-y-3">
-                    <div 
-                      className="p-3 rounded-xl flex items-start gap-3"
-                      style={{ background: '#FAFAFA' }}
-                    >
-                      <div 
-                        className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
-                        style={{ background: 'rgba(167,139,250,0.15)' }}
-                      >
-                        <Target className="w-4 h-4" style={{ color: '#A78BFA' }} />
-                      </div>
-                      <div className="flex-1">
-                        <p 
-                          className="text-xs mb-0" 
-                          style={{ 
-                            fontFamily: 'Inter, sans-serif',
-                            fontWeight: 600,
-                            color: '#000000',
-                            lineHeight: 1.5
-                          }}
-                        >
-                          At this rate, you'll complete your goal 3 days early
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </motion.div>
-            </AnimatePresence>
-          </div>
-        </UnifiedCard>
+                caption="Added by you"
+                variant="purple"
+                icon={<GraduationCap className="w-5 h-5" />}
+              />
+            </div>
 
-        {/* Active Goals */}
-        <div className="space-y-3">
-          <h2 
-            className="mb-0 px-1" 
-            style={{ 
-              fontFamily: 'Inter, sans-serif',
-              fontWeight: 600,
-              fontSize: '20px',
-              color: '#000000'
-            }}
-          >
-            Active Goals
-          </h2>
+            <Tabs defaultValue="overview" className="w-full">
+              <TabsList className="grid grid-cols-3 w-full h-11 p-1 rounded-xl bg-black/5">
+                <TabsTrigger value="overview">Overview</TabsTrigger>
+                <TabsTrigger value="results">Results</TabsTrigger>
+                <TabsTrigger value="subjects">Subjects</TabsTrigger>
+              </TabsList>
 
-          {activeGoals.map((goal, index) => (
-            <UnifiedCard key={goal.id} delay={0.6 + index * 0.05}>
-              <div className="p-4">
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-2">
-                    <h3 
-                      className="mb-0 text-sm" 
-                      style={{ 
-                        fontFamily: 'Inter, sans-serif',
-                        fontWeight: 600,
-                        color: '#000000'
-                      }}
-                    >
-                      {goal.title}
-                    </h3>
-                    <Badge 
-                      className="border-0 text-xs"
-                      style={{ 
-                        background: goal.subject.includes('Math') ? '#FFD50020' : '#00000010',
-                        color: goal.subject.includes('Math') ? '#000000' : '#595959',
-                        fontFamily: 'Inter, sans-serif',
-                        fontWeight: 600,
-                        padding: '2px 8px'
-                      }}
-                    >
-                      {goal.subject}
-                    </Badge>
-                  </div>
-                  
-                  {/* Progress bar */}
-                  <div 
-                    className="h-2 rounded-full overflow-hidden mb-2"
-                    style={{ background: '#F3F4F6' }}
-                  >
-                    <motion.div 
-                      className="h-full rounded-full"
-                      initial={{ width: 0 }}
-                      animate={{ width: `${goal.progress}%` }}
-                      transition={{ duration: 1, ease: "easeOut", delay: 0.7 + index * 0.1 }}
-                      style={{ 
-                        background: goal.onTrack 
-                          ? 'linear-gradient(90deg, #FFD500, #FFC700)' 
-                          : 'linear-gradient(90deg, #FCA5A5, #EF4444)'
-                      }}
-                    />
-                  </div>
-
-                  <div className="flex items-center justify-between mb-3">
-                    <p 
-                      className="text-xs mb-0" 
-                      style={{ 
-                        fontFamily: 'Inter, sans-serif',
-                        fontWeight: 600,
-                        color: '#595959'
-                      }}
-                    >
-                      {goal.progress}% complete
-                    </p>
-                    <p 
-                      className="text-xs mb-0" 
-                      style={{ 
-                        fontFamily: 'Inter, sans-serif',
-                        fontWeight: 600,
-                        color: goal.onTrack ? '#10B981' : '#EF4444'
-                      }}
-                    >
-                      {goal.projected}
-                    </p>
-                  </div>
-
-                  {/* Always Visible Details */}
-                  <div 
-                    className="pt-3 flex items-center justify-between"
-                    style={{ borderTop: '1px solid #F3F4F6' }}
-                  >
+              <TabsContent value="overview" className="space-y-4 mt-4">
+                <Card
+                  className="border-0 p-5"
+                  style={{
+                    borderRadius: "22px",
+                    boxShadow: "0 8px 26px rgba(0,0,0,.06)",
+                  }}
+                >
+                  <div className="flex items-start justify-between mb-4">
                     <div>
-                      <p 
-                        className="text-xs mb-0" 
-                        style={{ 
-                          fontFamily: 'Inter, sans-serif',
-                          fontWeight: 600,
-                          color: '#595959',
-                          textTransform: 'uppercase',
-                          letterSpacing: '0.05em'
-                        }}
-                      >
-                        Deadline
-                      </p>
-                      <p 
-                        className="text-sm mb-0 mt-1" 
-                        style={{ 
-                          fontFamily: 'Inter, sans-serif',
-                          fontWeight: 700,
-                          color: '#000000'
-                        }}
-                      >
-                        {goal.deadline}
+                      <h2 className="m-0 text-lg font-bold">
+                        Performance
+                      </h2>
+                      <p className="m-0 mt-1 text-xs text-[#666]">
+                        Real Classroom data over time
                       </p>
                     </div>
-                    <div className="text-right">
-                      <p 
-                        className="text-xs mb-0" 
-                        style={{ 
-                          fontFamily: 'Inter, sans-serif',
-                          fontWeight: 600,
-                          color: '#595959',
-                          textTransform: 'uppercase',
-                          letterSpacing: '0.05em'
+
+                    <div className="flex p-1 bg-black/5 rounded-lg">
+                      <button
+                        onClick={() => setGraphMode("results")}
+                        className="px-3 py-1.5 rounded-md text-xs font-semibold"
+                        style={{
+                          background:
+                            graphMode === "results"
+                              ? "#FFFFFF"
+                              : "transparent",
+                          boxShadow:
+                            graphMode === "results"
+                              ? "0 2px 7px rgba(0,0,0,.08)"
+                              : "none",
                         }}
                       >
-                        Status
-                      </p>
-                      <p 
-                        className="text-sm mb-0 mt-1" 
-                        style={{ 
-                          fontFamily: 'Inter, sans-serif',
-                          fontWeight: 700,
-                          color: goal.onTrack ? '#10B981' : '#EF4444'
+                        Results
+                      </button>
+                      <button
+                        onClick={() => setGraphMode("completion")}
+                        className="px-3 py-1.5 rounded-md text-xs font-semibold"
+                        style={{
+                          background:
+                            graphMode === "completion"
+                              ? "#FFFFFF"
+                              : "transparent",
+                          boxShadow:
+                            graphMode === "completion"
+                              ? "0 2px 7px rgba(0,0,0,.08)"
+                              : "none",
                         }}
                       >
-                        {goal.onTrack ? 'On Track ✓' : 'Behind'}
-                      </p>
+                        Completion
+                      </button>
                     </div>
                   </div>
-                </div>
-              </div>
-            </UnifiedCard>
-          ))}
-        </div>
 
-        {/* Recommendations */}
-        <div className="space-y-3">
-          <h2 
-            className="mb-0 px-1" 
-            style={{ 
-              fontFamily: 'Inter, sans-serif',
-              fontWeight: 600,
-              fontSize: '20px',
-              color: '#000000'
-            }}
-          >
-            Recommendations
-          </h2>
-
-          {aiRecommendations.map((rec, index) => {
-            const Icon = rec.icon;
-            const isExpanded = expandedRecommendation === rec.id;
-            return (
-              <UnifiedCard key={rec.id} delay={0.75 + index * 0.05}>
-                <div 
-                  className="p-4 cursor-pointer"
-                  onClick={() => setExpandedRecommendation(isExpanded ? null : rec.id)}
-                >
-                  <div className="flex items-start gap-3">
-                    <div 
-                      className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
-                      style={{ background: 'rgba(255,213,0,0.15)' }}
-                    >
-                      <Icon className="w-5 h-5" style={{ color: '#FFD500', strokeWidth: 2.5 }} />
+                  {graphData.length === 0 ? (
+                    <div className="h-48 flex items-center justify-center text-sm text-[#777]">
+                      No graph data available yet.
                     </div>
-                    <div className="flex-1">
-                      <h4 
-                        className="mb-1 text-sm" 
-                        style={{ 
-                          fontFamily: 'Inter, sans-serif',
-                          fontWeight: 600,
-                          color: '#000000'
-                        }}
-                      >
-                        {rec.title}
-                      </h4>
-                      <p 
-                        className="text-xs mb-0" 
-                        style={{ 
-                          fontFamily: 'Inter, sans-serif',
-                          fontWeight: 500,
-                          color: '#383838',
-                          lineHeight: 1.5
-                        }}
-                      >
-                        {rec.advice}
-                      </p>
-                    </div>
-                    <motion.div
-                      animate={{ rotate: isExpanded ? 90 : 0 }}
-                      transition={{ duration: 0.2 }}
-                    >
-                      <ChevronRight className="w-4 h-4 flex-shrink-0" style={{ color: '#595959' }} />
-                    </motion.div>
-                  </div>
-
-                  {/* Expanded Detail */}
-                  <AnimatePresence>
-                    {isExpanded && (
-                      <motion.div
-                        initial={{ opacity: 0, height: 0 }}
-                        animate={{ opacity: 1, height: 'auto' }}
-                        exit={{ opacity: 0, height: 0 }}
-                        transition={{ duration: 0.3 }}
-                        className="overflow-hidden"
-                      >
-                        <div 
-                          className="mt-3 pt-3 px-1"
-                          style={{ borderTop: '1px solid #F3F4F6' }}
+                  ) : (
+                    <div className="h-52">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart
+                          data={graphData}
+                          margin={{
+                            top: 8,
+                            right: 8,
+                            left: -24,
+                            bottom: 0,
+                          }}
                         >
-                          <p 
-                            className="text-xs mb-0" 
-                            style={{ 
-                              fontFamily: 'Inter, sans-serif',
-                              fontWeight: 500,
-                              color: '#595959',
-                              lineHeight: 1.6
+                          <CartesianGrid
+                            strokeDasharray="3 3"
+                            vertical={false}
+                            stroke="#ECECEC"
+                          />
+                          <XAxis
+                            dataKey="label"
+                            tick={{ fontSize: 10 }}
+                            axisLine={false}
+                            tickLine={false}
+                          />
+                          <YAxis
+                            domain={[0, 100]}
+                            tick={{ fontSize: 10 }}
+                            axisLine={false}
+                            tickLine={false}
+                          />
+                          <Tooltip
+                            contentStyle={{
+                              borderRadius: "12px",
+                              border: "1px solid #eee",
+                              fontSize: "12px",
+                            }}
+                          />
+                          <Line
+                            type="monotone"
+                            dataKey="value"
+                            stroke="#E1B800"
+                            strokeWidth={3}
+                            dot={{
+                              r: 4,
+                              fill: "#FFD500",
+                              stroke: "#111111",
+                              strokeWidth: 1.5,
+                            }}
+                            activeDot={{ r: 6 }}
+                          />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  )}
+                </Card>
+
+                <Card
+                  className="border-0 p-5"
+                  style={{
+                    borderRadius: "22px",
+                    boxShadow: "0 8px 26px rgba(0,0,0,.05)",
+                  }}
+                >
+                  <div className="flex items-center justify-between mb-4">
+                    <div>
+                      <h2 className="m-0 text-lg font-bold">
+                        Upcoming
+                      </h2>
+                      <p className="m-0 mt-1 text-xs text-[#666]">
+                        Classroom + school assessments
+                      </p>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setAddOpen(true)}
+                      className="rounded-xl"
+                    >
+                      <Plus className="w-4 h-4 mr-1" />
+                      Add
+                    </Button>
+                  </div>
+
+                  {assessmentLoading ? (
+                    <p className="text-sm text-[#777]">
+                      Loading school assessments...
+                    </p>
+                  ) : data.upcomingAssessments.length === 0 ? (
+                    <div className="py-7 text-center">
+                      <CalendarDays className="w-7 h-7 mx-auto mb-2 text-[#C59F00]" />
+                      <p className="m-0 text-sm font-semibold">
+                        Nothing upcoming
+                      </p>
+                      <p className="m-0 mt-1 text-xs text-[#777]">
+                        Add an exam or assessment if it isn't in Classroom.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {data.upcomingAssessments.map((item) => {
+                        const days = daysFromNow(item.dueAt);
+
+                        return (
+                          <div
+                            key={item.id}
+                            className="flex items-center gap-3 p-3 rounded-2xl"
+                            style={{
+                              background:
+                                item.source === "School"
+                                  ? "#F5F1FF"
+                                  : "#FFF9DF",
                             }}
                           >
-                            {rec.detail}
-                          </p>
+                            <div
+                              className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+                              style={{
+                                background:
+                                  item.source === "School"
+                                    ? "#E8DEFF"
+                                    : "#FFD50033",
+                              }}
+                            >
+                              {item.source === "School" ? (
+                                <GraduationCap className="w-5 h-5 text-[#7357B8]" />
+                              ) : (
+                                <BookOpen className="w-5 h-5 text-[#A88400]" />
+                              )}
+                            </div>
+
+                            <div className="flex-1 min-w-0">
+                              <div className="flex gap-2 items-center">
+                                <p className="m-0 text-[11px] font-bold text-[#777] truncate">
+                                  {item.subject}
+                                </p>
+                                <Badge
+                                  className="text-[9px] px-1.5 py-0 border-0"
+                                  style={{
+                                    background: "rgba(255,255,255,.75)",
+                                    color: "#555",
+                                  }}
+                                >
+                                  {item.source}
+                                </Badge>
+                              </div>
+                              <p className="m-0 mt-1 text-sm font-bold truncate">
+                                {item.title}
+                              </p>
+                              <p className="m-0 mt-1 text-[11px] text-[#666]">
+                                {item.type}
+                                {item.weighting !== null
+                                  ? ` • ${item.weighting}% weighting`
+                                  : ""}
+                              </p>
+                            </div>
+
+                            <div className="text-right shrink-0">
+                              <p
+                                className="m-0 text-sm font-extrabold"
+                                style={{
+                                  color:
+                                    days <= 2
+                                      ? "#D44949"
+                                      : "#111111",
+                                }}
+                              >
+                                {days === 0
+                                  ? "Today"
+                                  : days === 1
+                                  ? "Tomorrow"
+                                  : `${days}d`}
+                              </p>
+                              <p className="m-0 mt-1 text-[10px] text-[#777]">
+                                {formatShortDate(item.dueAt)}
+                              </p>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </Card>
+              </TabsContent>
+
+              <TabsContent value="results" className="space-y-3 mt-4">
+                {data.recentResults.length === 0 ? (
+                  <Card className="p-5 border-0 rounded-2xl">
+                    No returned grades are available yet.
+                  </Card>
+                ) : (
+                  data.recentResults.map((item) => {
+                    const percentage = getPercentage(item);
+                    const due = getDueDate(item);
+
+                    return (
+                      <Card
+                        key={`${item.courseId}-${item.id}`}
+                        className="border-0 p-4"
+                        style={{
+                          borderRadius: "18px",
+                          boxShadow:
+                            "0 5px 18px rgba(0,0,0,.05)",
+                        }}
+                      >
+                        <div className="flex items-center justify-between gap-4">
+                          <div className="min-w-0">
+                            <p className="m-0 text-[11px] font-bold text-[#777]">
+                              {item.courseName}
+                            </p>
+                            <p className="m-0 mt-1 text-sm font-bold">
+                              {item.title}
+                            </p>
+                            {due && (
+                              <p className="m-0 mt-1 text-[11px] text-[#777]">
+                                {formatShortDate(due)}
+                              </p>
+                            )}
+                          </div>
+
+                          <div className="text-right shrink-0">
+                            <p className="m-0 text-lg font-extrabold">
+                              {item.submission?.assignedGrade}
+                              {typeof item.maxPoints === "number"
+                                ? `/${item.maxPoints}`
+                                : ""}
+                            </p>
+                            {percentage !== null && (
+                              <Badge
+                                className="border-0 mt-1"
+                                style={{
+                                  background:
+                                    percentage >= 80
+                                      ? "#E8F8EE"
+                                      : percentage >= 60
+                                      ? "#FFF5C7"
+                                      : "#FFE7E7",
+                                  color:
+                                    percentage >= 80
+                                      ? "#247744"
+                                      : percentage >= 60
+                                      ? "#8A6A00"
+                                      : "#B63E3E",
+                                }}
+                              >
+                                {Math.round(percentage)}%
+                              </Badge>
+                            )}
+                          </div>
                         </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </div>
-              </UnifiedCard>
-            );
-          })}
-        </div>
+                      </Card>
+                    );
+                  })
+                )}
+              </TabsContent>
 
-        {/* Achievements */}
-        <div className="space-y-3">
-          <div className="flex items-center justify-between px-1">
-            <h2 
-              className="mb-0" 
-              style={{ 
-                fontFamily: 'Inter, sans-serif',
-                fontWeight: 600,
-                fontSize: '20px',
-                color: '#000000'
-              }}
-            >
-              Achievements
-            </h2>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="text-xs"
-              style={{
-                fontFamily: 'Inter, sans-serif',
-                fontWeight: 600,
-                color: '#595959'
-              }}
-            >
-              View All
-            </Button>
-          </div>
-
-          <div className="grid grid-cols-3 gap-3">
-            {achievements.map((achievement, index) => {
-              const Icon = achievement.icon;
-              return (
-                <UnifiedCard key={achievement.id} delay={0.85 + index * 0.03}>
-                  <div 
-                    className="p-4 text-center relative overflow-hidden"
-                    style={{ 
-                      opacity: achievement.earned ? 1 : 0.5 
+              <TabsContent value="subjects" className="space-y-3 mt-4">
+                {data.summaries.map((summary) => (
+                  <Card
+                    key={summary.id}
+                    className="border-0 p-4"
+                    style={{
+                      borderRadius: "18px",
+                      boxShadow:
+                        "0 5px 18px rgba(0,0,0,.05)",
                     }}
                   >
-                    {/* Radiating pattern background */}
-                    {achievement.earned && (
-                      <div 
-                        className="absolute inset-0"
-                        style={{
-                          background: `radial-gradient(circle at center, ${achievement.color}15 0%, transparent 70%)`,
-                          opacity: 0.5
-                        }}
-                      />
-                    )}
+                    <div className="flex justify-between gap-4 mb-3">
+                      <div>
+                        <h3 className="m-0 text-sm font-bold">
+                          {summary.name}
+                        </h3>
+                        <p className="m-0 mt-1 text-[11px] text-[#666]">
+                          {summary.completed}/{summary.total} complete
+                          {summary.overdue > 0
+                            ? ` • ${summary.overdue} overdue`
+                            : ""}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="m-0 text-lg font-extrabold">
+                          {summary.averagePercent === null
+                            ? "—"
+                            : `${Math.round(
+                                summary.averagePercent
+                              )}%`}
+                        </p>
+                        <p className="m-0 text-[10px] text-[#777]">
+                          average
+                        </p>
+                      </div>
+                    </div>
+                    <Progress
+                      value={summary.completionRate}
+                      className="h-2.5"
+                    />
+                  </Card>
+                ))}
+              </TabsContent>
+            </Tabs>
 
-                    <motion.div 
-                      className="w-10 h-10 rounded-xl flex items-center justify-center mx-auto mb-2 relative"
-                      style={{ 
-                        background: achievement.earned 
-                          ? `linear-gradient(145deg, ${achievement.color}, ${achievement.color}dd)` 
-                          : '#E6E6E6',
-                        boxShadow: achievement.earned ? `0px 4px 12px ${achievement.color}40` : 'none'
-                      }}
-                      whileHover={achievement.earned ? { scale: 1.1, rotate: 5 } : {}}
-                      onClick={() => handleAchievementClick(achievement)}
-                    >
-                      {achievement.earned ? (
-                        <Icon className="w-5 h-5" style={{ color: '#000000', strokeWidth: 2.5 }} />
-                      ) : (
-                        <Lock className="w-4 h-4" style={{ color: '#9CA3AF' }} />
-                      )}
-                    </motion.div>
-                    
-                    <h4 
-                      className="mb-1 text-xs" 
-                      style={{ 
-                        fontFamily: 'Inter, sans-serif',
-                        fontWeight: 600,
-                        color: achievement.earned ? '#000000' : '#9CA3AF',
-                        lineHeight: 1.3
-                      }}
-                    >
-                      {achievement.name}
-                    </h4>
-                    <p 
-                      className="text-xs mb-0" 
-                      style={{ 
-                        fontFamily: 'Inter, sans-serif',
-                        fontWeight: 700,
-                        color: achievement.earned ? '#FFD500' : '#D1D5DB'
-                      }}
-                    >
-                      {achievement.points} pts
-                    </p>
-                  </div>
-                </UnifiedCard>
-              );
-            })}
-          </div>
-        </div>
+            <Button
+              className="w-full rounded-xl"
+              variant="outline"
+              onClick={() => onNavigate?.("study")}
+            >
+              Open Study Tools
+              <ArrowUpRight className="w-4 h-4 ml-2" />
+            </Button>
+          </>
+        )}
       </div>
 
-      {/* Achievement Unlock Modal */}
-      {showAchievementModal && (
-        <Dialog open={showAchievementModal} onOpenChange={setShowAchievementModal}>
-          <DialogContent className="max-w-2xl">
-            <DialogHeader>
-              <DialogTitle>Achievement Unlocked!</DialogTitle>
-              <DialogDescription>
-                Congratulations on earning a new achievement!
-              </DialogDescription>
-            </DialogHeader>
-            <AchievementUnlock 
-              achievement={selectedAchievement}
-              showConfetti={showConfetti}
-              onConfettiComplete={() => setShowConfetti(false)}
-            />
-          </DialogContent>
-        </Dialog>
-      )}
+      <Dialog open={addOpen} onOpenChange={setAddOpen}>
+        <DialogContent
+          className="max-w-sm max-h-[85vh] overflow-y-auto"
+          style={{ borderRadius: "22px" }}
+        >
+          <DialogHeader>
+            <DialogTitle>Add School Assessment</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <Field label="Subject">
+              <input
+                value={form.subject}
+                onChange={(e) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    subject: e.target.value,
+                  }))
+                }
+                placeholder="e.g. Chemistry"
+                className="w-full h-11 px-3 rounded-xl border border-gray-200"
+              />
+            </Field>
+
+            <Field label="Assessment name">
+              <input
+                value={form.title}
+                onChange={(e) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    title: e.target.value,
+                  }))
+                }
+                placeholder="e.g. Equilibrium Exam"
+                className="w-full h-11 px-3 rounded-xl border border-gray-200"
+              />
+            </Field>
+
+            <Field label="Type">
+              <select
+                value={form.assessmentType}
+                onChange={(e) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    assessmentType: e.target.value,
+                  }))
+                }
+                className="w-full h-11 px-3 rounded-xl border border-gray-200 bg-white"
+              >
+                <option>Exam</option>
+                <option>Test</option>
+                <option>Assignment</option>
+                <option>Practical</option>
+                <option>Presentation</option>
+                <option>Other</option>
+              </select>
+            </Field>
+
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Date">
+                <input
+                  type="date"
+                  value={form.dueDate}
+                  onChange={(e) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      dueDate: e.target.value,
+                    }))
+                  }
+                  className="w-full h-11 px-3 rounded-xl border border-gray-200"
+                />
+              </Field>
+              <Field label="Time">
+                <input
+                  type="time"
+                  value={form.dueTime}
+                  onChange={(e) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      dueTime: e.target.value,
+                    }))
+                  }
+                  className="w-full h-11 px-3 rounded-xl border border-gray-200"
+                />
+              </Field>
+            </div>
+
+            <Field label="Weighting (%) — optional">
+              <input
+                type="number"
+                min="0"
+                max="100"
+                value={form.weighting}
+                onChange={(e) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    weighting: e.target.value,
+                  }))
+                }
+                placeholder="25"
+                className="w-full h-11 px-3 rounded-xl border border-gray-200"
+              />
+            </Field>
+
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Difficulty">
+                <select
+                  value={form.difficulty}
+                  onChange={(e) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      difficulty: e.target.value,
+                    }))
+                  }
+                  className="w-full h-11 px-3 rounded-xl border border-gray-200 bg-white"
+                >
+                  <option value="1">1 — Easy</option>
+                  <option value="2">2</option>
+                  <option value="3">3 — Medium</option>
+                  <option value="4">4</option>
+                  <option value="5">5 — Hard</option>
+                </select>
+              </Field>
+
+              <Field label="Confidence">
+                <select
+                  value={form.confidence}
+                  onChange={(e) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      confidence: e.target.value,
+                    }))
+                  }
+                  className="w-full h-11 px-3 rounded-xl border border-gray-200 bg-white"
+                >
+                  <option value="1">1 — Low</option>
+                  <option value="2">2</option>
+                  <option value="3">3 — Okay</option>
+                  <option value="4">4</option>
+                  <option value="5">5 — High</option>
+                </select>
+              </Field>
+            </div>
+
+            <Field label="Notes — optional">
+              <textarea
+                value={form.notes}
+                onChange={(e) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    notes: e.target.value,
+                  }))
+                }
+                rows={3}
+                placeholder="Topics, chapters, teacher notes..."
+                className="w-full p-3 rounded-xl border border-gray-200 resize-none"
+              />
+            </Field>
+
+            <Button
+              className="w-full h-11 rounded-xl"
+              onClick={() => void saveAssessment()}
+              disabled={
+                savingAssessment ||
+                !form.subject.trim() ||
+                !form.title.trim() ||
+                !form.dueDate
+              }
+            >
+              {savingAssessment
+                ? "Saving..."
+                : "Add Assessment"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
+  );
+}
+
+function MetricCard({
+  label,
+  value,
+  caption,
+  variant,
+  icon,
+}: {
+  label: string;
+  value: string;
+  caption: string;
+  variant: "yellow" | "green" | "coral" | "purple";
+  icon: React.ReactNode;
+}) {
+  const styles = {
+    yellow: {
+      background: "linear-gradient(135deg,#FFF5B8,#FFE661)",
+      iconBg: "rgba(255,255,255,.52)",
+      iconColor: "#876B00",
+    },
+    green: {
+      background: "linear-gradient(135deg,#E8F8EE,#CFF0DB)",
+      iconBg: "rgba(255,255,255,.55)",
+      iconColor: "#287A48",
+    },
+    coral: {
+      background: "linear-gradient(135deg,#FFE9E5,#FFD0C7)",
+      iconBg: "rgba(255,255,255,.55)",
+      iconColor: "#B44D42",
+    },
+    purple: {
+      background: "linear-gradient(135deg,#F1EAFF,#DDD0FF)",
+      iconBg: "rgba(255,255,255,.55)",
+      iconColor: "#7357B8",
+    },
+  }[variant];
+
+  return (
+    <motion.div whileHover={{ y: -2 }}>
+      <Card
+        className="border-0 p-4"
+        style={{
+          borderRadius: "19px",
+          background: styles.background,
+          boxShadow: "0 8px 20px rgba(0,0,0,.05)",
+        }}
+      >
+        <div
+          className="w-9 h-9 rounded-xl flex items-center justify-center mb-3"
+          style={{
+            background: styles.iconBg,
+            color: styles.iconColor,
+          }}
+        >
+          {icon}
+        </div>
+        <p className="m-0 text-[11px] font-bold uppercase tracking-wide text-black/55">
+          {label}
+        </p>
+        <p className="m-0 mt-1 text-[28px] font-extrabold leading-none">
+          {value}
+        </p>
+        <p className="m-0 mt-2 text-[11px] text-black/55">
+          {caption}
+        </p>
+      </Card>
+    </motion.div>
+  );
+}
+
+function Field({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <label className="block">
+      <span className="block mb-1.5 text-xs font-bold text-[#555]">
+        {label}
+      </span>
+      {children}
+    </label>
   );
 }

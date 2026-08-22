@@ -1,565 +1,801 @@
-import { useState } from "react";
-import { Card } from "./ui/card";
-import { Button } from "./ui/button";
-import { 
-  Sparkles, Calendar, Clock, Target, BookOpen, 
-  TrendingUp, Coffee, Brain, Zap, ChevronLeft,
-  CheckCircle2, Circle, AlertCircle, Award, Moon, Sun, Play
+import { useEffect, useMemo, useState } from "react";
+import {
+  AlertCircle,
+  Calendar,
+  CheckCircle2,
+  ChevronLeft,
+  Circle,
+  Clock,
+  Play,
+  Sparkles,
+  Target,
 } from "lucide-react";
-import { motion, AnimatePresence } from "motion/react";
-import { Badge } from "./ui/badge";
-import { Progress } from "./ui/progress";
-import { Separator } from "./ui/separator";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
+import { motion } from "motion/react";
 import { toast } from "sonner";
 
-interface StudyBlock {
-  day: string;
-  time: string;
-  subject: string;
-  topic: string;
-  duration: string;
-  type: "focus" | "review" | "practice" | "break";
-  priority: "high" | "medium" | "low";
-  completed?: boolean;
-}
+import { Badge } from "./ui/badge";
+import { Button } from "./ui/button";
+import { Card } from "./ui/card";
+import { Progress } from "./ui/progress";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 
-interface WeeklyGoal {
-  subject: string;
-  target: string;
-  currentProgress: number;
-  recommendedHours: number;
-}
+import { useAuth } from "../contexts/AuthContext";
+import { supabase } from "../lib/supabase";
+
+import {
+  getGoogleClassroomCourses,
+  getGoogleClassroomCoursework,
+  getMyGoogleClassroomSubmissions,
+  type GoogleClassroomCourseWork,
+  type GoogleClassroomSubmission,
+} from "../services/googleClassroom";
 
 interface AIStudyPlanPageProps {
   onBack: () => void;
   onStartSession?: () => void;
 }
 
-const weeklySchedule: StudyBlock[] = [
-  // Monday
-  { day: "Monday", time: "16:00", subject: "Algebra", topic: "Linear Equations Review", duration: "45 min", type: "focus", priority: "high" },
-  { day: "Monday", time: "17:00", subject: "Break", topic: "Rest & Recharge", duration: "15 min", type: "break", priority: "medium" },
-  { day: "Monday", time: "17:15", subject: "Geometry", topic: "Triangle Properties", duration: "30 min", type: "practice", priority: "medium" },
-  
-  // Tuesday
-  { day: "Tuesday", time: "16:00", subject: "English", topic: "Literature Analysis", duration: "45 min", type: "focus", priority: "high" },
-  { day: "Tuesday", time: "17:00", subject: "Algebra", topic: "Practice Problems", duration: "30 min", type: "practice", priority: "medium" },
-  
-  // Wednesday
-  { day: "Wednesday", time: "16:00", subject: "Geometry", topic: "Advanced Concepts", duration: "45 min", type: "focus", priority: "high" },
-  { day: "Wednesday", time: "17:00", subject: "Break", topic: "Rest & Recharge", duration: "15 min", type: "break", priority: "medium" },
-  { day: "Wednesday", time: "17:15", subject: "Review", topic: "Weekly Flashcards", duration: "30 min", type: "review", priority: "low" },
-  
-  // Thursday
-  { day: "Thursday", time: "16:00", subject: "Algebra", topic: "Factoring Deep Dive", duration: "50 min", type: "focus", priority: "high" },
-  { day: "Thursday", time: "17:00", subject: "English", topic: "Essay Writing", duration: "40 min", type: "practice", priority: "medium" },
-  
-  // Friday
-  { day: "Friday", time: "16:00", subject: "Mixed Review", topic: "All Subjects Quiz", duration: "45 min", type: "review", priority: "high" },
-  { day: "Friday", time: "17:00", subject: "Geometry", topic: "Problem Solving", duration: "30 min", type: "practice", priority: "medium" },
-  
-  // Weekend
-  { day: "Saturday", time: "10:00", subject: "English", topic: "Reading & Analysis", duration: "60 min", type: "focus", priority: "medium" },
-  { day: "Saturday", time: "14:00", subject: "Review", topic: "Week Summary", duration: "30 min", type: "review", priority: "low" },
-  
-  { day: "Sunday", time: "15:00", subject: "Algebra", topic: "Light Practice", duration: "30 min", type: "practice", priority: "low" },
+type ClassroomWorkItem = GoogleClassroomCourseWork & {
+  courseName: string;
+  submission?: GoogleClassroomSubmission;
+};
+
+interface SchoolAssessment {
+  id: string;
+  student_id: string;
+  subject: string;
+  title: string;
+  assessment_type: string;
+  due_at: string;
+  weighting: number | null;
+  difficulty: number | null;
+  confidence: number | null;
+  notes: string | null;
+}
+
+interface StudyBlock {
+  id: string;
+  day: string;
+  time: string;
+  subject: string;
+  topic: string;
+  durationMinutes: number;
+  priority: "high" | "medium" | "low";
+  dueDate: Date | null;
+  alternateLink?: string;
+  source: "Google Classroom" | "School";
+}
+
+const DAYS = [
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+  "Sunday",
 ];
 
-const weeklyGoals: WeeklyGoal[] = [
-  { subject: "Algebra", target: "Complete Units 7-8", currentProgress: 75, recommendedHours: 3.5 },
-  { subject: "Geometry", target: "Master Triangle Theorems", currentProgress: 45, recommendedHours: 2.5 },
-  { subject: "English", target: "Finish Book 2 Analysis", currentProgress: 60, recommendedHours: 2.0 },
-];
+function getDueDate(work: GoogleClassroomCourseWork): Date | null {
+  if (!work.dueDate) return null;
 
-const aiRecommendations = [
-  {
-    icon: Brain,
-    title: "Optimal Study Times",
-    description: "Based on your focus patterns, you're most productive between 4-6 PM on weekdays.",
-    priority: "high",
-  },
-  {
-    icon: Coffee,
-    title: "Strategic Breaks",
-    description: "Take 15-min breaks after 45 min sessions to maintain peak retention (proven +12% improvement).",
-    priority: "medium",
-  },
-  {
-    icon: Zap,
-    title: "Interleaving Subjects",
-    description: "Mix Algebra and Geometry sessions on the same day for better conceptual connections.",
-    priority: "high",
-  },
-  {
-    icon: Moon,
-    title: "Rest Optimization",
-    description: "Your fatigue patterns suggest lighter sessions on Sundays. Keep it under 45 minutes.",
-    priority: "low",
-  },
-];
+  return new Date(
+    work.dueDate.year,
+    work.dueDate.month - 1,
+    work.dueDate.day,
+    work.dueTime?.hours ?? 23,
+    work.dueTime?.minutes ?? 59
+  );
+}
 
-export function AIStudyPlanPage({ onBack, onStartSession }: AIStudyPlanPageProps) {
-  const [selectedDay, setSelectedDay] = useState<string>("Monday");
-  const [completedBlocks, setCompletedBlocks] = useState<Set<number>>(new Set());
+function isSubmitted(work: ClassroomWorkItem) {
+  return (
+    work.submission?.state === "TURNED_IN" ||
+    work.submission?.state === "RETURNED"
+  );
+}
 
-  const daysOfWeek = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+function startOfToday() {
+  const now = new Date();
+  return new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate()
+  );
+}
 
-  const toggleBlockCompletion = (index: number) => {
-    const newCompleted = new Set(completedBlocks);
-    if (newCompleted.has(index)) {
-      newCompleted.delete(index);
-    } else {
-      newCompleted.add(index);
-    }
-    setCompletedBlocks(newCompleted);
-  };
+function dayDiff(date: Date) {
+  const today = startOfToday();
+  const target = new Date(
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate()
+  );
 
-  const getTypeColor = (type: StudyBlock["type"]) => {
-    switch (type) {
-      case "focus": return "bg-primary/10 border-primary/30 text-primary";
-      case "review": return "bg-purple-50 border-purple-200 text-purple-700";
-      case "practice": return "bg-blue-50 border-blue-200 text-blue-700";
-      case "break": return "bg-green-50 border-green-200 text-green-700";
-    }
-  };
+  return Math.ceil(
+    (target.getTime() - today.getTime()) /
+      (1000 * 60 * 60 * 24)
+  );
+}
 
-  const getPriorityIcon = (priority: StudyBlock["priority"]) => {
-    switch (priority) {
-      case "high": return <AlertCircle className="w-3 h-3 text-red-500" />;
-      case "medium": return <Circle className="w-3 h-3 text-yellow-500" />;
-      case "low": return <Circle className="w-3 h-3 text-green-500" />;
-    }
-  };
+function getPriority(item: ClassroomWorkItem) {
+  const due = getDueDate(item);
 
-  const todayBlocks = weeklySchedule.filter(block => block.day === selectedDay);
-  const totalHoursThisWeek = weeklySchedule
-    .filter(b => b.type !== "break")
-    .reduce((acc, b) => acc + parseInt(b.duration), 0) / 60;
+  if (!due) return "low" as const;
 
-  const completionRate = (completedBlocks.size / weeklySchedule.length) * 100;
+  const days = dayDiff(due);
 
-  // Find next uncompleted session for today
-  const getNextSession = () => {
-    const todayIndex = weeklySchedule.findIndex(
-      (block, idx) => block.day === selectedDay && !completedBlocks.has(idx) && block.type !== "break"
-    );
-    if (todayIndex !== -1) {
-      return weeklySchedule[todayIndex];
-    }
-    return null;
-  };
+  if (days <= 2) return "high" as const;
+  if (days <= 7) return "medium" as const;
+  return "low" as const;
+}
 
-  const nextSession = getNextSession();
+function recommendedMinutes(priority: StudyBlock["priority"]) {
+  if (priority === "high") return 60;
+  if (priority === "medium") return 45;
+  return 30;
+}
 
-  const handleStartSession = () => {
-    if (onStartSession && nextSession) {
-      toast.success(`Starting: ${nextSession.subject}`, {
-        description: `${nextSession.topic} • ${nextSession.duration}`,
-        duration: 3000,
-      });
-      // Small delay for toast to show before navigation
-      setTimeout(() => {
-        onStartSession();
-      }, 300);
-    }
-  };
+function getNextSevenDays() {
+  const today = startOfToday();
 
-  const handleExportToCalendar = () => {
-    // Create iCalendar (.ics) format - works with Google Calendar, Apple Calendar, Outlook, etc.
-    let icsContent = 'BEGIN:VCALENDAR\n';
-    icsContent += 'VERSION:2.0\n';
-    icsContent += 'PRODID:-//Marquis Tutoring//Study Plan//EN\n';
-    icsContent += 'CALSCALE:GREGORIAN\n';
-    icsContent += 'METHOD:PUBLISH\n';
-    icsContent += 'X-WR-CALNAME:Marquis Study Plan\n';
-    icsContent += 'X-WR-TIMEZONE:UTC\n';
+  return Array.from({ length: 7 }, (_, index) => {
+    const date = new Date(today);
+    date.setDate(today.getDate() + index);
 
-    // Get current week's Monday as reference
-    const today = new Date();
-    const currentDayOfWeek = today.getDay();
-    const daysUntilMonday = currentDayOfWeek === 0 ? -6 : 1 - currentDayOfWeek;
-    const monday = new Date(today);
-    monday.setDate(today.getDate() + daysUntilMonday);
-
-    const dayMapping: { [key: string]: number } = {
-      Monday: 0, Tuesday: 1, Wednesday: 2, Thursday: 3,
-      Friday: 4, Saturday: 5, Sunday: 6
+    return {
+      date,
+      day: date.toLocaleDateString("en-AU", {
+        weekday: "long",
+      }),
     };
+  });
+}
 
-    weeklySchedule.forEach((block, index) => {
-      if (block.type === 'break') return; // Skip breaks
+function buildSchedule(
+  items: ClassroomWorkItem[],
+  assessments: SchoolAssessment[]
+): StudyBlock[] {
+  const upcomingDays = getNextSevenDays();
 
-      const dayOffset = dayMapping[block.day];
-      const eventDate = new Date(monday);
-      eventDate.setDate(monday.getDate() + dayOffset);
+  const classroomItems = items
+    .filter((item) => !isSubmitted(item))
+    .map((item) => ({
+      id: `${item.courseId}-${item.id}`,
+      subject: item.courseName,
+      topic: item.title,
+      dueDate: getDueDate(item),
+      priority: getPriority(item),
+      alternateLink: item.alternateLink,
+      source: "Google Classroom" as const,
+      weighting: null as number | null,
+      difficulty: null as number | null,
+      confidence: null as number | null,
+    }));
 
-      // Parse time (format: "HH:MM")
-      const [hours, minutes] = block.time.split(':').map(Number);
-      eventDate.setHours(hours, minutes, 0, 0);
+  const schoolItems = assessments
+    .filter((assessment) => new Date(assessment.due_at) >= startOfToday())
+    .map((assessment) => {
+      const dueDate = new Date(assessment.due_at);
+      const days = dayDiff(dueDate);
 
-      // Parse duration (format: "XX min")
-      const durationMinutes = parseInt(block.duration);
-      const endDate = new Date(eventDate);
-      endDate.setMinutes(endDate.getMinutes() + durationMinutes);
+      let priority: StudyBlock["priority"] =
+        days <= 2 ? "high" : days <= 7 ? "medium" : "low";
 
-      // Format dates to iCalendar format (YYYYMMDDTHHMMSS)
-      const formatDate = (date: Date) => {
-        const year = date.getFullYear();
-        const month = String(date.getMonth() + 1).padStart(2, '0');
-        const day = String(date.getDate()).padStart(2, '0');
-        const hour = String(date.getHours()).padStart(2, '0');
-        const minute = String(date.getMinutes()).padStart(2, '0');
-        const second = String(date.getSeconds()).padStart(2, '0');
-        return `${year}${month}${day}T${hour}${minute}${second}`;
+      // Student-entered context can legitimately raise priority.
+      if (
+        (assessment.weighting !== null &&
+          assessment.weighting >= 25) ||
+        (assessment.confidence !== null &&
+          assessment.confidence <= 2) ||
+        (assessment.difficulty !== null &&
+          assessment.difficulty >= 4)
+      ) {
+        priority = "high";
+      }
+
+      return {
+        id: `school-${assessment.id}`,
+        subject: assessment.subject,
+        topic: `${assessment.assessment_type}: ${assessment.title}`,
+        dueDate,
+        priority,
+        alternateLink: undefined,
+        source: "School" as const,
+        weighting: assessment.weighting,
+        difficulty: assessment.difficulty,
+        confidence: assessment.confidence,
       };
-
-      icsContent += 'BEGIN:VEVENT\n';
-      icsContent += `UID:marquis-${index}-${Date.now()}@marquistutoring.com\n`;
-      icsContent += `DTSTAMP:${formatDate(new Date())}\n`;
-      icsContent += `DTSTART:${formatDate(eventDate)}\n`;
-      icsContent += `DTEND:${formatDate(endDate)}\n`;
-      icsContent += `SUMMARY:${block.subject}: ${block.topic}\n`;
-      icsContent += `DESCRIPTION:${block.type.toUpperCase()} session - ${block.topic}\\nDuration: ${block.duration}\\nPriority: ${block.priority}\n`;
-      icsContent += `LOCATION:Marquis Tutoring\n`;
-      icsContent += `STATUS:CONFIRMED\n`;
-      icsContent += `CATEGORIES:${block.subject},Study,${block.type}\n`;
-      icsContent += 'END:VEVENT\n';
     });
 
-    icsContent += 'END:VCALENDAR';
+  const pending = [...classroomItems, ...schoolItems].sort((a, b) => {
+    const aDue =
+      a.dueDate?.getTime() ?? Number.MAX_SAFE_INTEGER;
+    const bDue =
+      b.dueDate?.getTime() ?? Number.MAX_SAFE_INTEGER;
 
-    // Create downloadable file
-    const blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = 'marquis-study-plan.ics';
+    if (aDue !== bDue) return aDue - bDue;
+
+    const priorityRank = { high: 0, medium: 1, low: 2 };
+    return (
+      priorityRank[a.priority] - priorityRank[b.priority]
+    );
+  });
+
+  const perDayCount = new Map<number, number>();
+
+  return pending.map((item, index) => {
+    const dueDays =
+      item.dueDate === null ? 7 : Math.max(0, dayDiff(item.dueDate));
+
+    const urgencyIndex = Math.max(
+      0,
+      Math.min(
+        upcomingDays.length - 1,
+        Math.min(index, Math.max(0, dueDays - 1))
+      )
+    );
+
+    const slot = perDayCount.get(urgencyIndex) ?? 0;
+    perDayCount.set(urgencyIndex, slot + 1);
+
+    // Recommendation, not a claimed historical habit.
+    const hour = 16 + Math.min(slot, 3);
+
+    let minutes = recommendedMinutes(item.priority);
+
+    // Give high-weight or low-confidence assessments more room.
+    if (
+      item.source === "School" &&
+      ((item.weighting !== null && item.weighting >= 25) ||
+        (item.confidence !== null && item.confidence <= 2))
+    ) {
+      minutes = Math.max(minutes, 60);
+    }
+
+    return {
+      id: item.id,
+      day: upcomingDays[urgencyIndex].day,
+      time: `${String(hour).padStart(2, "0")}:00`,
+      subject: item.subject,
+      topic: item.topic,
+      durationMinutes: minutes,
+      priority: item.priority,
+      dueDate: item.dueDate,
+      alternateLink: item.alternateLink,
+      source: item.source,
+    };
+  });
+}
+
+export function AIStudyPlanPage({
+  onBack,
+  onStartSession,
+}: AIStudyPlanPageProps) {
+  const { googleProviderToken, studentId } = useAuth();
+
+  const [work, setWork] = useState<ClassroomWorkItem[]>([]);
+  const [schoolAssessments, setSchoolAssessments] =
+    useState<SchoolAssessment[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [completedBlocks, setCompletedBlocks] =
+    useState<Set<string>>(new Set());
+
+  const todayName = new Date().toLocaleDateString("en-AU", {
+    weekday: "long",
+  });
+
+  const [selectedDay, setSelectedDay] = useState(
+    DAYS.includes(todayName) ? todayName : "Monday"
+  );
+
+  useEffect(() => {
+    const load = async () => {
+      if (!googleProviderToken) return;
+
+      setLoading(true);
+      setError(null);
+
+      try {
+        const courses =
+          await getGoogleClassroomCourses(googleProviderToken);
+
+        const all = await Promise.all(
+          courses.map(async (course) => {
+            const [coursework, submissions] = await Promise.all([
+              getGoogleClassroomCoursework(
+                course.id,
+                googleProviderToken
+              ),
+              getMyGoogleClassroomSubmissions(
+                course.id,
+                googleProviderToken
+              ),
+            ]);
+
+            return coursework.map(
+              (item): ClassroomWorkItem => ({
+                ...item,
+                courseName: course.name,
+                submission: submissions.find(
+                  (submission) =>
+                    submission.courseWorkId === item.id
+                ),
+              })
+            );
+          })
+        );
+
+        setWork(all.flat());
+      } catch (err) {
+        console.error("Study plan load failed:", err);
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Unable to build a study plan."
+        );
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    void load();
+  }, [googleProviderToken]);
+
+  useEffect(() => {
+    const loadSchoolAssessments = async () => {
+      if (!studentId) {
+        setSchoolAssessments([]);
+        return;
+      }
+
+      const { data, error: assessmentError } = await supabase
+        .from("school_assessments")
+        .select(
+          "id, student_id, subject, title, assessment_type, due_at, weighting, difficulty, confidence, notes"
+        )
+        .eq("student_id", studentId)
+        .gte("due_at", new Date().toISOString())
+        .order("due_at", { ascending: true });
+
+      if (assessmentError) {
+        console.error(
+          "Study plan school assessments failed:",
+          assessmentError
+        );
+        return;
+      }
+
+      setSchoolAssessments((data ?? []) as SchoolAssessment[]);
+    };
+
+    void loadSchoolAssessments();
+  }, [studentId]);
+
+  const schedule = useMemo(
+    () => buildSchedule(work, schoolAssessments),
+    [work, schoolAssessments]
+  );
+
+  const todayBlocks = schedule.filter(
+    (block) => block.day === selectedDay
+  );
+
+  const totalRecommendedMinutes = schedule.reduce(
+    (sum, block) => sum + block.durationMinutes,
+    0
+  );
+
+  const completionRate =
+    schedule.length > 0
+      ? (completedBlocks.size / schedule.length) * 100
+      : 0;
+
+  const nextSession = todayBlocks.find(
+    (block) => !completedBlocks.has(block.id)
+  );
+
+  const toggleComplete = (id: string) => {
+    setCompletedBlocks((previous) => {
+      const next = new Set(previous);
+
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+
+      return next;
+    });
+  };
+
+  const handleStartSession = () => {
+    if (!nextSession) return;
+
+    toast.success(`Starting: ${nextSession.subject}`, {
+      description: `${nextSession.topic} • ${nextSession.durationMinutes} min`,
+    });
+
+    onStartSession?.();
+  };
+
+  const exportToCalendar = () => {
+    if (schedule.length === 0) return;
+
+    const nextSevenDays = getNextSevenDays();
+
+    const dateForDay = new Map(
+      nextSevenDays.map((item) => [item.day, item.date])
+    );
+
+    const formatICS = (date: Date) => {
+      const y = date.getFullYear();
+      const m = String(date.getMonth() + 1).padStart(2, "0");
+      const d = String(date.getDate()).padStart(2, "0");
+      const h = String(date.getHours()).padStart(2, "0");
+      const min = String(date.getMinutes()).padStart(2, "0");
+
+      return `${y}${m}${d}T${h}${min}00`;
+    };
+
+    let ics = "BEGIN:VCALENDAR\n";
+    ics += "VERSION:2.0\n";
+    ics += "PRODID:-//Marquis Education//Study Plan//EN\n";
+
+    schedule.forEach((block) => {
+      const base = dateForDay.get(block.day);
+      if (!base) return;
+
+      const start = new Date(base);
+      const [hour, minute] = block.time.split(":").map(Number);
+      start.setHours(hour, minute, 0, 0);
+
+      const end = new Date(start);
+      end.setMinutes(end.getMinutes() + block.durationMinutes);
+
+      ics += "BEGIN:VEVENT\n";
+      ics += `UID:${block.id}-${Date.now()}@marquis.education\n`;
+      ics += `DTSTAMP:${formatICS(new Date())}\n`;
+      ics += `DTSTART:${formatICS(start)}\n`;
+      ics += `DTEND:${formatICS(end)}\n`;
+      ics += `SUMMARY:${block.subject}: ${block.topic}\n`;
+      ics += `DESCRIPTION:Recommended Marquis study session. Priority: ${block.priority}.\n`;
+      ics += "END:VEVENT\n";
+    });
+
+    ics += "END:VCALENDAR";
+
+    const blob = new Blob([ics], {
+      type: "text/calendar;charset=utf-8",
+    });
+
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+
+    link.href = url;
+    link.download = "marquis-study-plan.ics";
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    URL.revokeObjectURL(link.href);
+    URL.revokeObjectURL(url);
 
-    toast.success('Calendar Exported!', {
-      description: 'Open the downloaded file to add events to your calendar',
-      duration: 4000,
-    });
+    toast.success("Study plan exported");
   };
 
   return (
-    <div className="flex flex-col gap-12 pb-12">
-      {/* Header with back button */}
-      <motion.div
-        initial={{ opacity: 0, y: -10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4 }}
-        className="space-y-4"
+    <div className="min-h-screen pb-24 px-6 pt-6"
+      style={{
+        background:
+          "linear-gradient(to bottom, #FFF9EB 0%, #FFFFFF 55%, #FFF7D9 100%)",
+      }}
+    >
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={onBack}
+        className="-ml-2 mb-4"
       >
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={onBack}
-          className="gap-2 -ml-2"
-        >
-          <ChevronLeft className="w-4 h-4 stroke-[1.5]" />
-          Back to Insights
-        </Button>
+        <ChevronLeft className="w-4 h-4 mr-2" />
+        Back to Insights
+      </Button>
 
+      <div className="space-y-5">
         <div>
           <div className="flex items-center gap-2 mb-2">
-            <Sparkles className="w-5 h-5 text-primary stroke-[1.5]" />
-            <h2 className="mb-0">AI-Generated Study Plan</h2>
+            <Sparkles className="w-5 h-5 text-[#C59F00]" />
+            <h1 className="m-0 text-2xl font-bold">
+              Smart Study Plan
+            </h1>
           </div>
-          <p className="text-sm text-foreground-secondary">
-            Personalized weekly roadmap optimized for your goals and learning patterns
+          <p className="m-0 text-sm text-[#595959]">
+            Built from Google Classroom plus school assessments
+            you add yourself
           </p>
         </div>
-      </motion.div>
 
-      {/* Overview Stats */}
-      <motion.div
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4, delay: 0.1 }}
-        className="grid grid-cols-3 gap-4"
-      >
-        <Card className="card-minimal text-center">
-          <Clock className="w-5 h-5 text-primary mx-auto mb-2 stroke-[1.5]" />
-          <p className="text-2xl text-foreground mb-1">{totalHoursThisWeek.toFixed(1)}h</p>
-          <p className="text-xs text-foreground-secondary">Total This Week</p>
-        </Card>
-        <Card className="card-minimal text-center">
-          <Target className="w-5 h-5 text-primary mx-auto mb-2 stroke-[1.5]" />
-          <p className="text-2xl text-foreground mb-1">{weeklyGoals.length}</p>
-          <p className="text-xs text-foreground-secondary">Active Goals</p>
-        </Card>
-        <Card className="card-minimal text-center">
-          <Award className="w-5 h-5 text-primary mx-auto mb-2 stroke-[1.5]" />
-          <p className="text-2xl text-foreground mb-1">{completionRate.toFixed(0)}%</p>
-          <p className="text-xs text-foreground-secondary">Completed</p>
-        </Card>
-      </motion.div>
-
-      {/* AI Recommendations */}
-      <motion.div
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4, delay: 0.2 }}
-        className="space-y-4"
-      >
-        <p className="section-label">💡 AI RECOMMENDATIONS</p>
-        
-        <div className="grid grid-cols-2 gap-3">
-          {aiRecommendations.map((rec, index) => {
-            const Icon = rec.icon;
-            return (
-              <motion.div
-                key={index}
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ delay: 0.3 + index * 0.05 }}
-              >
-                <Card className={`card-minimal h-full ${rec.priority === 'high' ? 'border-primary/30 bg-primary/5' : ''}`}>
-                  <div className="flex items-start gap-3">
-                    <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
-                      <Icon className="w-4 h-4 text-primary stroke-[1.5]" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <h4 className="text-sm mb-1 text-foreground">{rec.title}</h4>
-                      <p className="text-xs text-foreground-secondary leading-relaxed">
-                        {rec.description}
-                      </p>
-                    </div>
-                  </div>
-                </Card>
-              </motion.div>
-            );
-          })}
-        </div>
-      </motion.div>
-
-      {/* Weekly Schedule */}
-      <motion.div
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4, delay: 0.3 }}
-        className="space-y-4"
-      >
-        <p className="section-label">📅 WEEKLY SCHEDULE</p>
-
-        <Tabs value={selectedDay} onValueChange={setSelectedDay}>
-          <TabsList className="grid w-full grid-cols-7 bg-white/60 rounded-lg p-1 h-auto border border-border">
-            {daysOfWeek.map((day) => {
-              const dayBlocks = weeklySchedule.filter(b => b.day === day);
-              const completedCount = dayBlocks.filter((_, idx) => {
-                const globalIndex = weeklySchedule.findIndex(b => b === dayBlocks[idx]);
-                return completedBlocks.has(globalIndex);
-              }).length;
-              const allCompleted = completedCount === dayBlocks.length;
-
-              return (
-                <TabsTrigger
-                  key={day}
-                  value={day}
-                  className="rounded-md data-[state=active]:bg-white data-[state=active]:shadow-sm transition-all py-2 text-xs flex-col gap-1 relative"
-                >
-                  <span>{day.slice(0, 3)}</span>
-                  {allCompleted && (
-                    <CheckCircle2 className="w-3 h-3 text-primary absolute -top-1 -right-1" />
-                  )}
-                </TabsTrigger>
-              );
-            })}
-          </TabsList>
-
-          {daysOfWeek.map((day) => (
-            <TabsContent key={day} value={day} className="mt-4 space-y-3">
-              <AnimatePresence mode="wait">
-                <motion.div
-                  key={day}
-                  initial={{ opacity: 0, x: -10 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: 10 }}
-                  transition={{ duration: 0.2 }}
-                  className="space-y-3"
-                >
-                  {weeklySchedule
-                    .map((block, globalIndex) => ({ ...block, globalIndex }))
-                    .filter(block => block.day === day)
-                    .map((block) => {
-                      const isCompleted = completedBlocks.has(block.globalIndex);
-                      
-                      return (
-                        <motion.div
-                          key={block.globalIndex}
-                          initial={{ opacity: 0, scale: 0.95 }}
-                          animate={{ opacity: 1, scale: 1 }}
-                          transition={{ delay: 0.05 }}
-                        >
-                          <Card
-                            className={`card-minimal cursor-pointer transition-all ${
-                              isCompleted ? 'opacity-60 border-primary/20' : ''
-                            }`}
-                            onClick={() => toggleBlockCompletion(block.globalIndex)}
-                          >
-                            <div className="flex items-start gap-3">
-                              {/* Checkbox */}
-                              <div className="mt-0.5">
-                                {isCompleted ? (
-                                  <CheckCircle2 className="w-5 h-5 text-primary stroke-[1.5]" />
-                                ) : (
-                                  <Circle className="w-5 h-5 text-border stroke-[1.5]" />
-                                )}
-                              </div>
-
-                              {/* Time */}
-                              <div className="w-16 flex-shrink-0">
-                                <Badge variant="outline" className="text-xs">
-                                  {block.time}
-                                </Badge>
-                              </div>
-
-                              {/* Content */}
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2 mb-1">
-                                  <h4 className={`text-sm ${isCompleted ? 'line-through' : ''}`}>
-                                    {block.subject}
-                                  </h4>
-                                  <Badge className={`text-xs ${getTypeColor(block.type)}`}>
-                                    {block.type}
-                                  </Badge>
-                                </div>
-                                <p className="text-xs text-foreground-secondary mb-2">
-                                  {block.topic}
-                                </p>
-                                <div className="flex items-center gap-3 text-xs text-foreground-tertiary">
-                                  <span className="flex items-center gap-1">
-                                    <Clock className="w-3 h-3 stroke-[1.5]" />
-                                    {block.duration}
-                                  </span>
-                                  <span className="flex items-center gap-1">
-                                    {getPriorityIcon(block.priority)}
-                                    {block.priority}
-                                  </span>
-                                </div>
-                              </div>
-                            </div>
-                          </Card>
-                        </motion.div>
-                      );
-                    })}
-                </motion.div>
-              </AnimatePresence>
-            </TabsContent>
-          ))}
-        </Tabs>
-      </motion.div>
-
-      {/* Success Tips */}
-      <motion.div
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4, delay: 0.5 }}
-        className="space-y-4"
-      >
-        <p className="section-label">✨ SUCCESS TIPS</p>
-
-        <Card className="card-minimal bg-primary/5 border-primary/20">
-          <div className="space-y-3">
-            <div className="flex items-start gap-3">
-              <Sun className="w-5 h-5 text-primary mt-0.5 stroke-[1.5] flex-shrink-0" />
-              <div className="flex-1">
-                <h4 className="text-sm text-foreground mb-1">Morning Prep</h4>
-                <p className="text-xs text-foreground-secondary leading-relaxed">
-                  Review your schedule each morning. Visualizing your study blocks increases completion rates by 23%.
-                </p>
-              </div>
-            </div>
-
-            <Separator />
-
-            <div className="flex items-start gap-3">
-              <TrendingUp className="w-5 h-5 text-primary mt-0.5 stroke-[1.5] flex-shrink-0" />
-              <div className="flex-1">
-                <h4 className="text-sm text-foreground mb-1">Track Progress</h4>
-                <p className="text-xs text-foreground-secondary leading-relaxed">
-                  Check off each block as you complete it. The visual feedback reinforces motivation and builds momentum.
-                </p>
-              </div>
-            </div>
-
-            <Separator />
-
-            <div className="flex items-start gap-3">
-              <Coffee className="w-5 h-5 text-primary mt-0.5 stroke-[1.5] flex-shrink-0" />
-              <div className="flex-1">
-                <h4 className="text-sm text-foreground mb-1">Don't Skip Breaks</h4>
-                <p className="text-xs text-foreground-secondary leading-relaxed">
-                  Breaks are scheduled strategically. They prevent burnout and improve long-term retention.
-                </p>
-              </div>
-            </div>
-          </div>
-        </Card>
-      </motion.div>
-
-      {/* Action Buttons */}
-      {/* Quick Actions */}
-      <motion.div
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4, delay: 0.6 }}
-        className="space-y-3"
-      >
-        {/* Next Session Preview */}
-        {nextSession && (
-          <Card className="card-minimal bg-primary/5 border-primary/20">
-            <div className="flex items-start gap-3">
-              <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
-                <BookOpen className="w-5 h-5 text-primary stroke-[1.5]" />
-              </div>
-              <div className="flex-1">
-                <p className="text-xs text-foreground-tertiary uppercase tracking-wider mb-1">
-                  Next Session
-                </p>
-                <p className="text-foreground mb-1">{nextSession.subject}: {nextSession.topic}</p>
-                <div className="flex items-center gap-2 text-xs text-foreground-secondary">
-                  <Clock className="w-3 h-3 stroke-[1.5]" />
-                  <span>{nextSession.time}</span>
-                  <span>•</span>
-                  <span>{nextSession.duration}</span>
-                  <Badge variant="outline" className={`text-xs ml-auto ${getTypeColor(nextSession.type)}`}>
-                    {nextSession.type}
-                  </Badge>
-                </div>
-              </div>
-            </div>
+        {!googleProviderToken ? (
+          <Card className="p-5">
+            Sign in with Google to build your schedule.
           </Card>
-        )}
+        ) : loading ? (
+          <Card className="p-5 flex items-center gap-3">
+            <Clock className="w-5 h-5" />
+            Building your schedule...
+          </Card>
+        ) : error ? (
+          <Card className="p-5 text-red-700">
+            {error}
+          </Card>
+        ) : (
+          <>
+            <div className="grid grid-cols-3 gap-3">
+              <Stat
+                icon={<Clock className="w-5 h-5" />}
+                value={`${(totalRecommendedMinutes / 60).toFixed(1)}h`}
+                label="Recommended"
+              />
+              <Stat
+                icon={<Target className="w-5 h-5" />}
+                value={String(schedule.length)}
+                label="Tasks"
+              />
+              <Stat
+                icon={<CheckCircle2 className="w-5 h-5" />}
+                value={`${Math.round(completionRate)}%`}
+                label="Done"
+              />
+            </div>
 
-        <div className="flex gap-3">
-          <Button variant="outline" className="flex-1" onClick={handleExportToCalendar}>
-            <Calendar className="w-4 h-4 mr-2 stroke-[1.5]" />
-            Export to Calendar
-          </Button>
-          <Button 
-            className="flex-1"
-            onClick={handleStartSession}
-            disabled={!nextSession}
-          >
-            {nextSession ? (
-              <>
-                <Play className="w-4 h-4 mr-2 stroke-[1.5] fill-current" />
-                Start Session
-              </>
-            ) : (
-              <>
-                <CheckCircle2 className="w-4 h-4 mr-2 stroke-[1.5]" />
-                All Complete!
-              </>
+            {schedule.length > 0 && (
+              <Card className="p-5 border border-black/5">
+                <div className="flex justify-between mb-3">
+                  <div>
+                    <h3 className="m-0 text-sm font-bold">
+                      Plan Completion
+                    </h3>
+                    <p className="m-0 mt-1 text-xs text-[#595959]">
+                      Check off recommended study blocks
+                    </p>
+                  </div>
+                  <span className="font-bold">
+                    {completedBlocks.size}/{schedule.length}
+                  </span>
+                </div>
+                <Progress value={completionRate} className="h-2.5" />
+              </Card>
             )}
-          </Button>
-        </div>
-      </motion.div>
+
+            {schedule.length === 0 ? (
+              <Card className="p-6 text-center border border-black/5">
+                <CheckCircle2 className="w-8 h-8 mx-auto mb-3 text-green-600" />
+                <h3 className="m-0 font-bold">
+                  No incomplete Classroom work
+                </h3>
+                <p className="m-0 mt-2 text-sm text-[#595959]">
+                  There is nothing to schedule from your current
+                  Google Classroom data.
+                </p>
+              </Card>
+            ) : (
+              <Tabs
+                value={selectedDay}
+                onValueChange={setSelectedDay}
+              >
+                <TabsList className="grid grid-cols-7 w-full p-1 h-auto">
+                  {DAYS.map((day) => (
+                    <TabsTrigger
+                      key={day}
+                      value={day}
+                      className="text-xs py-2"
+                    >
+                      {day.slice(0, 3)}
+                    </TabsTrigger>
+                  ))}
+                </TabsList>
+
+                {DAYS.map((day) => {
+                  const blocks = schedule.filter(
+                    (block) => block.day === day
+                  );
+
+                  return (
+                    <TabsContent
+                      key={day}
+                      value={day}
+                      className="mt-4 space-y-3"
+                    >
+                      {blocks.length === 0 ? (
+                        <Card className="p-5 text-sm text-[#595959]">
+                          No study blocks recommended for {day}.
+                        </Card>
+                      ) : (
+                        blocks.map((block) => {
+                          const completed =
+                            completedBlocks.has(block.id);
+
+                          return (
+                            <motion.div
+                              key={block.id}
+                              whileTap={{ scale: 0.99 }}
+                            >
+                              <Card
+                                className="p-4 cursor-pointer border border-black/5"
+                                onClick={() =>
+                                  toggleComplete(block.id)
+                                }
+                              >
+                                <div className="flex items-start gap-3">
+                                  <div className="mt-0.5">
+                                    {completed ? (
+                                      <CheckCircle2 className="w-5 h-5 text-green-600" />
+                                    ) : (
+                                      <Circle className="w-5 h-5 text-gray-300" />
+                                    )}
+                                  </div>
+
+                                  <Badge variant="outline">
+                                    {block.time}
+                                  </Badge>
+
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-start justify-between gap-2">
+                                      <div>
+                                        <div className="flex items-center gap-2">
+                                          <h3
+                                            className={`m-0 text-sm font-bold ${
+                                              completed
+                                                ? "line-through opacity-60"
+                                                : ""
+                                            }`}
+                                          >
+                                            {block.subject}
+                                          </h3>
+                                          <Badge
+                                            variant="outline"
+                                            className="text-[9px] px-1.5 py-0"
+                                          >
+                                            {block.source}
+                                          </Badge>
+                                        </div>
+                                        <p className="m-0 mt-1 text-xs text-[#595959]">
+                                          {block.topic}
+                                        </p>
+                                      </div>
+
+                                      <PriorityBadge
+                                        priority={block.priority}
+                                      />
+                                    </div>
+
+                                    <div className="mt-3 flex flex-wrap gap-3 text-[11px] text-[#666]">
+                                      <span className="flex items-center gap-1">
+                                        <Clock className="w-3 h-3" />
+                                        {block.durationMinutes} min recommended
+                                      </span>
+
+                                      {block.dueDate && (
+                                        <span className="flex items-center gap-1">
+                                          <Calendar className="w-3 h-3" />
+                                          Due{" "}
+                                          {block.dueDate.toLocaleDateString(
+                                            "en-AU",
+                                            {
+                                              day: "numeric",
+                                              month: "short",
+                                            }
+                                          )}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              </Card>
+                            </motion.div>
+                          );
+                        })
+                      )}
+                    </TabsContent>
+                  );
+                })}
+              </Tabs>
+            )}
+
+            <Card
+              className="p-4 border border-[#FFD50044]"
+              style={{ background: "#FFFDF4" }}
+            >
+              <div className="flex gap-3">
+                <AlertCircle className="w-5 h-5 text-[#C59F00] shrink-0" />
+                <p className="m-0 text-xs text-[#595959] leading-relaxed">
+                  Marquis is currently estimating session length from
+                  deadline urgency because Google Classroom does not
+                  provide how long an assignment will take. Once study
+                  sessions are saved in Supabase, we can personalise
+                  these durations from the student's real history.
+                </p>
+              </div>
+            </Card>
+
+            <div className="flex gap-3">
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={exportToCalendar}
+                disabled={schedule.length === 0}
+              >
+                <Calendar className="w-4 h-4 mr-2" />
+                Export
+              </Button>
+
+              <Button
+                className="flex-1"
+                onClick={handleStartSession}
+                disabled={!nextSession}
+              >
+                <Play className="w-4 h-4 mr-2" />
+                Start Session
+              </Button>
+            </div>
+
+            {nextSession && (
+              <p className="text-xs text-center text-[#595959]">
+                Next: {nextSession.subject} — {nextSession.topic}
+              </p>
+            )}
+          </>
+        )}
+      </div>
     </div>
+  );
+}
+
+function Stat({
+  icon,
+  value,
+  label,
+}: {
+  icon: React.ReactNode;
+  value: string;
+  label: string;
+}) {
+  return (
+    <Card className="p-4 text-center border border-black/5">
+      <div className="mx-auto mb-2 w-9 h-9 rounded-xl flex items-center justify-center bg-[#FFD50022] text-[#C59F00]">
+        {icon}
+      </div>
+      <p className="m-0 text-xl font-extrabold">{value}</p>
+      <p className="m-0 mt-1 text-[10px] text-[#666]">
+        {label}
+      </p>
+    </Card>
+  );
+}
+
+function PriorityBadge({
+  priority,
+}: {
+  priority: StudyBlock["priority"];
+}) {
+  if (priority === "high") {
+    return (
+      <Badge className="bg-red-50 text-red-700 border-red-200">
+        High
+      </Badge>
+    );
+  }
+
+  if (priority === "medium") {
+    return (
+      <Badge className="bg-yellow-50 text-yellow-700 border-yellow-200">
+        Medium
+      </Badge>
+    );
+  }
+
+  return (
+    <Badge className="bg-green-50 text-green-700 border-green-200">
+      Low
+    </Badge>
   );
 }
