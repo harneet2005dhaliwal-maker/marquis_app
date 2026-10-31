@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { motion } from "motion/react";
@@ -20,6 +20,118 @@ export function LoginPage({ onLogin }: LoginPageProps) {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [googleLoading, setGoogleLoading] = useState(false);
+
+  const [resetEmailSent, setResetEmailSent] = useState(false);
+  const [resetLoading, setResetLoading] = useState(false);
+  const [isPasswordRecovery, setIsPasswordRecovery] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmNewPassword, setConfirmNewPassword] = useState("");
+  const [passwordUpdateLoading, setPasswordUpdateLoading] = useState(false);
+  const [passwordUpdated, setPasswordUpdated] = useState(false);
+
+  useEffect(() => {
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "PASSWORD_RECOVERY") {
+        setIsPasswordRecovery(true);
+        setError(null);
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  const handleForgotPassword = async () => {
+    setError(null);
+    setResetEmailSent(false);
+
+    const email = username.trim().toLowerCase();
+
+    if (!email) {
+      setError(
+        "Enter your email address first, then select Forgot password."
+      );
+      return;
+    }
+
+    try {
+      setResetLoading(true);
+
+      const { error: resetError } =
+        await supabase.auth.resetPasswordForEmail(email, {
+          // No separate route is required: Supabase will return to this
+          // login page and emit the PASSWORD_RECOVERY auth event.
+          redirectTo: window.location.origin,
+        });
+
+      if (resetError) {
+        throw resetError;
+      }
+
+      setResetEmailSent(true);
+    } catch (err) {
+      console.error("Password reset email error:", err);
+
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Unable to send the password reset email."
+      );
+    } finally {
+      setResetLoading(false);
+    }
+  };
+
+  const handleUpdatePassword = async (
+    e: React.FormEvent<HTMLFormElement>
+  ) => {
+    e.preventDefault();
+    setError(null);
+
+    if (newPassword.length < 8) {
+      setError("Your new password must be at least 8 characters.");
+      return;
+    }
+
+    if (newPassword !== confirmNewPassword) {
+      setError("The passwords do not match.");
+      return;
+    }
+
+    try {
+      setPasswordUpdateLoading(true);
+
+      const { error: updateError } =
+        await supabase.auth.updateUser({
+          password: newPassword,
+        });
+
+      if (updateError) {
+        throw updateError;
+      }
+
+      // End the temporary recovery session so the user can sign in
+      // normally with the new password.
+      await supabase.auth.signOut();
+
+      setPasswordUpdated(true);
+      setNewPassword("");
+      setConfirmNewPassword("");
+    } catch (err) {
+      console.error("Password update error:", err);
+
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Unable to update your password."
+      );
+    } finally {
+      setPasswordUpdateLoading(false);
+    }
+  };
 
   const handleGoogleLogin = async () => {
     setError(null);
@@ -111,6 +223,190 @@ export function LoginPage({ onLogin }: LoginPageProps) {
       );
     }
   };
+
+  if (isPasswordRecovery) {
+    return (
+      <div
+        className="min-h-screen flex items-center justify-center p-6"
+        style={{
+          background:
+            "radial-gradient(circle at top, #FFF9EB 0%, #FFFCF4 50%, #FFFFFF 100%)",
+        }}
+      >
+        <div
+          className="w-full max-w-[440px]"
+          style={{
+            background: "#FFFFFF",
+            borderRadius: "24px",
+            padding: "40px",
+            boxShadow:
+              "0 8px 32px rgba(0, 0, 0, 0.08), 0 2px 8px rgba(0, 0, 0, 0.04)",
+            border: "1px solid #E5E5E5",
+          }}
+        >
+          {passwordUpdated ? (
+            <>
+              <h1
+                style={{
+                  fontFamily: "Inter, -apple-system, sans-serif",
+                  fontSize: "26px",
+                  fontWeight: 700,
+                  color: "#000000",
+                  margin: "0 0 12px",
+                }}
+              >
+                Password updated
+              </h1>
+
+              <p
+                style={{
+                  fontFamily: "Inter, -apple-system, sans-serif",
+                  fontSize: "14px",
+                  color: "#666666",
+                  lineHeight: 1.6,
+                  margin: "0 0 24px",
+                }}
+              >
+                Your password has been changed successfully. You can now sign
+                in with your Marquis email and new password.
+              </p>
+
+              <Button
+                type="button"
+                className="w-full"
+                onClick={() => {
+                  setIsPasswordRecovery(false);
+                  setPasswordUpdated(false);
+                  setError(null);
+                }}
+                style={{
+                  background: "#F8D548",
+                  color: "#000000",
+                  fontFamily: "Inter, -apple-system, sans-serif",
+                  fontSize: "16px",
+                  fontWeight: 700,
+                  height: "56px",
+                  borderRadius: "14px",
+                  border: "none",
+                }}
+              >
+                Back to Login
+              </Button>
+            </>
+          ) : (
+            <form onSubmit={handleUpdatePassword}>
+              <h1
+                style={{
+                  fontFamily: "Inter, -apple-system, sans-serif",
+                  fontSize: "26px",
+                  fontWeight: 700,
+                  color: "#000000",
+                  margin: "0 0 8px",
+                }}
+              >
+                Reset your password
+              </h1>
+
+              <p
+                style={{
+                  fontFamily: "Inter, -apple-system, sans-serif",
+                  fontSize: "14px",
+                  color: "#666666",
+                  lineHeight: 1.6,
+                  margin: "0 0 28px",
+                }}
+              >
+                Enter a new password for your Marquis account.
+              </p>
+
+              <label
+                style={{
+                  display: "block",
+                  fontFamily: "Inter, -apple-system, sans-serif",
+                  fontSize: "14px",
+                  fontWeight: 600,
+                  marginBottom: "10px",
+                }}
+              >
+                New password
+              </label>
+
+              <Input
+                type="password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="Enter new password"
+                style={{
+                  height: "56px",
+                  borderRadius: "12px",
+                  marginBottom: "20px",
+                }}
+              />
+
+              <label
+                style={{
+                  display: "block",
+                  fontFamily: "Inter, -apple-system, sans-serif",
+                  fontSize: "14px",
+                  fontWeight: 600,
+                  marginBottom: "10px",
+                }}
+              >
+                Confirm new password
+              </label>
+
+              <Input
+                type="password"
+                value={confirmNewPassword}
+                onChange={(e) => setConfirmNewPassword(e.target.value)}
+                placeholder="Confirm new password"
+                style={{
+                  height: "56px",
+                  borderRadius: "12px",
+                  marginBottom: "20px",
+                }}
+              />
+
+              {error && (
+                <p
+                  style={{
+                    color: "#D32F2F",
+                    fontSize: "13px",
+                    marginBottom: "16px",
+                    fontFamily: "Inter, -apple-system, sans-serif",
+                  }}
+                >
+                  {error}
+                </p>
+              )}
+
+              <Button
+                type="submit"
+                className="w-full"
+                disabled={passwordUpdateLoading}
+                style={{
+                  background: "#F8D548",
+                  color: "#000000",
+                  fontFamily: "Inter, -apple-system, sans-serif",
+                  fontSize: "16px",
+                  fontWeight: 700,
+                  height: "56px",
+                  borderRadius: "14px",
+                  border: "none",
+                  cursor: passwordUpdateLoading ? "wait" : "pointer",
+                  opacity: passwordUpdateLoading ? 0.7 : 1,
+                }}
+              >
+                {passwordUpdateLoading
+                  ? "Updating password..."
+                  : "Reset Password"}
+              </Button>
+            </form>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -409,6 +705,8 @@ export function LoginPage({ onLogin }: LoginPageProps) {
           <div className="text-center" style={{ marginTop: "24px" }}>
             <button
               type="button"
+              onClick={handleForgotPassword}
+              disabled={resetLoading}
               style={{
                 fontFamily: "Inter, -apple-system, sans-serif",
                 fontSize: "13px",
@@ -429,8 +727,23 @@ export function LoginPage({ onLogin }: LoginPageProps) {
                 e.currentTarget.style.textDecoration = "none";
               }}
             >
-              Forgot password?
+              {resetLoading ? "Sending reset email..." : "Forgot password?"}
             </button>
+
+            {resetEmailSent && (
+              <p
+                style={{
+                  margin: "12px 0 0",
+                  color: "#2E7D32",
+                  fontSize: "13px",
+                  fontFamily: "Inter, -apple-system, sans-serif",
+                  lineHeight: 1.5,
+                }}
+              >
+                Reset email sent. Check your inbox and follow the link to choose
+                a new password.
+              </p>
+            )}
           </div>
         </motion.div>
 

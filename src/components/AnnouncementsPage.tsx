@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Card } from "./ui/card";
 import { Badge } from "./ui/badge";
 import { Bell, Calendar, AlertCircle, Info, Star, Megaphone, Heart, ThumbsUp, MessageCircle, Sparkles, BookOpen, PartyPopper, Flame, Lightbulb, Check, Bookmark, User, Trophy } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { Button } from "./ui/button";
 import { useData } from "../contexts/DataContext";
+import { supabase } from "../lib/supabase";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
 
 // Category color mapping - Marquis Brand
@@ -30,114 +31,129 @@ const emojiReactions = [
   { emoji: '💡', label: 'Insightful' }
 ];
 
+interface AnnouncementRecord {
+  id: number;
+  title: string;
+  message: string;
+  full_message?: string | null;
+  category: string;
+  type?: string | null;
+  author?: string | null;
+  published_at?: string | null;
+  expires_at?: string | null;
+  is_published?: boolean | null;
+  created_at?: string | null;
+}
+
+function formatRelativeDate(value?: string | null) {
+  if (!value) return "Recently";
+
+  const date = new Date(value);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+
+  if (Number.isNaN(diffMs)) return "Recently";
+
+  const minutes = Math.floor(diffMs / 60000);
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
+  const weeks = Math.floor(days / 7);
+
+  if (minutes < 1) return "Just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  if (hours < 24) return `${hours}h ago`;
+  if (days < 7) return `${days}d ago`;
+  if (weeks < 5) return `${weeks}w ago`;
+
+  return date.toLocaleDateString("en-AU", {
+    day: "numeric",
+    month: "short",
+    year: date.getFullYear() !== now.getFullYear() ? "numeric" : undefined,
+  });
+}
+
+
 export function AnnouncementsPage() {
   const { currentStudent } = useData();
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
+  const [announcements, setAnnouncements] = useState<AnnouncementRecord[]>([]);
+  const [loadingAnnouncements, setLoadingAnnouncements] = useState(true);
+  const [announcementError, setAnnouncementError] = useState<string | null>(null);
+
   const [likedPosts, setLikedPosts] = useState<number[]>([]);
   const [expandedPost, setExpandedPost] = useState<number | null>(null);
-  const [readPosts, setReadPosts] = useState<number[]>([3, 4, 5]);
+  const [readPosts, setReadPosts] = useState<number[]>([]);
   const [bookmarkedPosts, setBookmarkedPosts] = useState<number[]>([]);
   const [hoveredReaction, setHoveredReaction] = useState<{ postId: number; emoji: string } | null>(null);
-  const [postReactions, setPostReactions] = useState<{ [key: number]: { [emoji: string]: number } }>({
-    1: { '👍': 8, '❤️': 3, '🎉': 1 },
-    2: { '👍': 15, '💡': 9 },
-    3: { '👍': 12, '❤️': 4, '🔥': 2 },
-    4: { '❤️': 30, '🎉': 15 },
-    5: { '👍': 5 }
-  });
+  const [postReactions, setPostReactions] = useState<{ [key: number]: { [emoji: string]: number } }>({});
   const [userReactions, setUserReactions] = useState<{ [key: number]: string }>({});
 
-  const announcements = [
-    {
-      id: 1,
-      title: "Holiday Schedule Update",
-      message: "Classes will resume on Monday, October 14th after the school break. Make sure to complete any assigned homework during this time.",
-      fullMessage: "Classes will resume on Monday, October 14th after the school break. Make sure to complete any assigned homework during this time. We're excited to see everyone back and ready to learn! Don't forget to bring your completed worksheets.",
-      date: "2 hours ago",
-      timestamp: "Posted 2h ago by Marquis Team",
-      type: "info",
-      category: "schedule",
-      isNew: true,
-      likes: 12,
-      comments: 3,
-      recentComments: [
-        { user: "Zara", message: "Thanks for the update!" },
-        { user: "Alex", message: "Looking forward to coming back!" }
-      ],
-      author: "Marquis Team"
-    },
-    {
-      id: 2,
-      title: "New Study Materials Available",
-      message: "We've added new practice worksheets for Year 10 Mathematics covering quadratic equations. Check the Study Resources section!",
-      fullMessage: "We've added new practice worksheets for Year 10 Mathematics covering quadratic equations. Check the Study Resources section! These worksheets include step-by-step solutions and extra practice problems to help you master the concepts.",
-      date: "1 day ago",
-      timestamp: "Posted 1d ago by Ms. Johnson",
-      type: "info",
-      category: "academic",
-      isNew: true,
-      likes: 24,
-      comments: 7,
-      recentComments: [
-        { user: "Jordan", message: "Can't wait to try these!" },
-        { user: "Sam", message: "Very helpful!" }
-      ],
-      author: "Ms. Johnson"
-    },
-    {
-      id: 3,
-      title: "Upcoming Test Week",
-      message: "Test week is scheduled for October 18-22. Review your notes and use the practice materials available in the Study section.",
-      fullMessage: "Test week is scheduled for October 18-22. Review your notes and use the practice materials available in the Study section. Make sure to get plenty of rest and arrive prepared. Good luck to everyone!",
-      date: "3 days ago",
-      timestamp: "Posted 3d ago by Dr. Smith",
-      type: "warning",
-      category: "exam",
-      isNew: false,
-      likes: 45,
-      comments: 12,
-      recentComments: [
-        { user: "Emma", message: "Let's ace this!" },
-        { user: "Michael", message: "Study group anyone?" }
-      ],
-      author: "Dr. Smith"
-    },
-    {
-      id: 4,
-      title: "Congratulations to Alex!",
-      message: "Alex Jones has achieved a perfect score in Mathematics this week! Amazing work! 🎉",
-      fullMessage: "Alex Jones has achieved a perfect score in Mathematics this week! Your dedication and hard work have truly paid off. Keep up the excellent work and continue inspiring your peers! 🎉",
-      date: "5 days ago",
-      timestamp: "Posted 5d ago by Marquis Team",
-      type: "success",
-      category: "celebration",
-      isNew: false,
-      likes: 67,
-      comments: 18,
-      recentComments: [
-        { user: "Sarah", message: "So proud of you!" },
-        { user: "David", message: "Incredible!" }
-      ],
-      author: "Marquis Team"
-    },
-    {
-      id: 5,
-      title: "System Maintenance",
-      message: "The learning platform will undergo scheduled maintenance on Saturday from 2-4 AM. Please save your work before then.",
-      fullMessage: "The learning platform will undergo scheduled maintenance on Saturday from 2-4 AM. Please save your work before then. We apologize for any inconvenience and appreciate your patience as we improve our services.",
-      date: "1 week ago",
-      timestamp: "Posted 1w ago by Tech Team",
-      type: "info",
-      category: "system",
-      isNew: false,
-      likes: 8,
-      comments: 2,
-      recentComments: [
-        { user: "Chris", message: "Thanks for letting us know!" }
-      ],
-      author: "Tech Team"
-    }
-  ];
+  useEffect(() => {
+    let mounted = true;
+
+    const loadAnnouncements = async () => {
+      try {
+        setLoadingAnnouncements(true);
+        setAnnouncementError(null);
+
+        const nowIso = new Date().toISOString();
+
+        const { data, error } = await supabase
+          .from("announcements")
+          .select(
+            "id, title, message, full_message, category, type, author, published_at, expires_at, is_published, created_at"
+          )
+          .eq("is_published", true)
+          .lte("published_at", nowIso)
+          .or(`expires_at.is.null,expires_at.gt.${nowIso}`)
+          .order("published_at", { ascending: false });
+
+        if (error) {
+          throw error;
+        }
+
+        if (mounted) {
+          setAnnouncements((data ?? []) as AnnouncementRecord[]);
+        }
+      } catch (error) {
+        console.error("Failed to load announcements:", error);
+
+        if (mounted) {
+          setAnnouncementError(
+            error instanceof Error
+              ? error.message
+              : "Unable to load announcements."
+          );
+        }
+      } finally {
+        if (mounted) {
+          setLoadingAnnouncements(false);
+        }
+      }
+    };
+
+    void loadAnnouncements();
+
+    const channel = supabase
+      .channel("announcements-live")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "announcements",
+        },
+        () => {
+          void loadAnnouncements();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      mounted = false;
+      void supabase.removeChannel(channel);
+    };
+  }, []);
 
   const categories = [
     { id: "all", label: "All", icon: Bell },
@@ -147,9 +163,15 @@ export function AnnouncementsPage() {
     { id: "celebration", label: "Wins", icon: PartyPopper },
   ];
 
-  const filteredAnnouncements = selectedCategory === "all"
-    ? announcements
-    : announcements.filter(a => a.category === selectedCategory);
+  const filteredAnnouncements = useMemo(
+    () =>
+      selectedCategory === "all"
+        ? announcements
+        : announcements.filter(
+            (announcement) => announcement.category === selectedCategory
+          ),
+    [announcements, selectedCategory]
+  );
 
   const handleLike = (id: number) => {
     setLikedPosts(prev =>
@@ -174,7 +196,9 @@ export function AnnouncementsPage() {
     const currentUserReaction = userReactions[postId];
     
     setPostReactions(prev => {
-      const postReactionsData = { ...prev[postId] } || {};
+const postReactionsData = {
+  ...(prev[postId] ?? {}),
+};
       
       if (currentUserReaction === emoji) {
         postReactionsData[emoji] = Math.max(0, (postReactionsData[emoji] || 0) - 1);
@@ -315,7 +339,50 @@ export function AnnouncementsPage() {
           </div>
         </motion.div>
 
+        {loadingAnnouncements && (
+          <Card
+            className="border-0 p-6 text-center"
+            style={{
+              borderRadius: "20px",
+              background: "#FFFFFF",
+              boxShadow: "0px 10px 26px rgba(0,0,0,0.06)",
+            }}
+          >
+            <p
+              style={{
+                fontFamily: "Neurial Grotesk, sans-serif",
+                color: "#6E6E70",
+                margin: 0,
+              }}
+            >
+              Loading announcements…
+            </p>
+          </Card>
+        )}
+
+        {announcementError && (
+          <Card
+            className="border-0 p-6"
+            style={{
+              borderRadius: "20px",
+              background: "#FFF4F4",
+              boxShadow: "0px 10px 26px rgba(0,0,0,0.06)",
+            }}
+          >
+            <p
+              style={{
+                fontFamily: "Neurial Grotesk, sans-serif",
+                color: "#B91C1C",
+                margin: 0,
+              }}
+            >
+              {announcementError}
+            </p>
+          </Card>
+        )}
+
         {/* Announcements List */}
+        {!loadingAnnouncements && !announcementError && (
         <div className="space-y-4">
           <AnimatePresence mode="popLayout">
             {filteredAnnouncements.map((announcement, index) => {
@@ -374,7 +441,17 @@ export function AnnouncementsPage() {
                               >
                                 {announcement.title}
                               </h3>
-                              {announcement.isNew && !isRead && (
+                              {(() => {
+                                const published = announcement.published_at
+                                  ? new Date(announcement.published_at)
+                                  : null;
+                                const isNew =
+                                  published &&
+                                  Date.now() - published.getTime() <
+                                    48 * 60 * 60 * 1000;
+
+                                return isNew && !isRead;
+                              })() && (
                                 <motion.div
                                   initial={{ scale: 0 }}
                                   animate={{ scale: 1 }}
@@ -398,7 +475,7 @@ export function AnnouncementsPage() {
                                 color: '#6E6E70'
                               }}
                             >
-                              {announcement.author} • {announcement.date}
+                              {announcement.author || "Marquis Team"} • {formatRelativeDate(announcement.published_at || announcement.created_at)}
                             </p>
                             <p 
                               className="text-sm" 
@@ -408,7 +485,7 @@ export function AnnouncementsPage() {
                                 lineHeight: '1.5'
                               }}
                             >
-                              {isExpanded ? announcement.fullMessage : announcement.message}
+                              {isExpanded ? announcement.full_message || announcement.message : announcement.message}
                             </p>
                           </div>
                         </div>
@@ -433,7 +510,7 @@ export function AnnouncementsPage() {
                       </div>
 
                       {/* Expand indicator */}
-                      {!isExpanded && announcement.fullMessage.length > announcement.message.length && (
+                      {!isExpanded && (announcement.full_message?.length ?? 0) > announcement.message.length && (
                         <p 
                           className="text-xs mb-3" 
                           style={{ 
@@ -444,55 +521,6 @@ export function AnnouncementsPage() {
                         >
                           Tap to read more →
                         </p>
-                      )}
-
-                      {/* Comments Preview */}
-                      {isExpanded && announcement.recentComments && (
-                        <motion.div
-                          initial={{ opacity: 0, height: 0 }}
-                          animate={{ opacity: 1, height: 'auto' }}
-                          exit={{ opacity: 0, height: 0 }}
-                          className="mt-4 pt-4 space-y-2"
-                          style={{ borderTop: '1px solid #E6E6E6' }}
-                        >
-                          <p 
-                            className="text-xs mb-2" 
-                            style={{ 
-                              fontFamily: 'Neurial Grotesk, sans-serif',
-                              fontWeight: 600,
-                              color: '#6E6E70'
-                            }}
-                          >
-                            Recent Comments
-                          </p>
-                          {announcement.recentComments.map((comment, idx) => (
-                            <div 
-                              key={idx} 
-                              className="p-3 rounded-xl"
-                              style={{ background: '#FAFAFA' }}
-                            >
-                              <p 
-                                className="text-xs mb-1" 
-                                style={{ 
-                                  fontFamily: 'Neurial Grotesk, sans-serif',
-                                  fontWeight: 600,
-                                  color: '#000000'
-                                }}
-                              >
-                                {comment.user}
-                              </p>
-                              <p 
-                                className="text-xs" 
-                                style={{ 
-                                  fontFamily: 'Neurial Grotesk, sans-serif',
-                                  color: '#6E6E70'
-                                }}
-                              >
-                                {comment.message}
-                              </p>
-                            </div>
-                          ))}
-                        </motion.div>
                       )}
 
                       {/* Reactions Bar */}
@@ -572,8 +600,11 @@ export function AnnouncementsPage() {
             })}
           </AnimatePresence>
         </div>
+        )}
 
-        {filteredAnnouncements.length === 0 && (
+        {!loadingAnnouncements &&
+          !announcementError &&
+          filteredAnnouncements.length === 0 && (
           <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}

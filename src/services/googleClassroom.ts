@@ -44,6 +44,10 @@ export interface GoogleClassroomSubmission {
   alternateLink?: string;
 }
 
+interface GoogleClassroomApiError extends Error {
+  status?: number;
+}
+
 async function classroomFetch<T>(
   url: string,
   providerToken: string
@@ -69,7 +73,14 @@ async function classroomFetch<T>(
       // Keep fallback message.
     }
 
-    throw new Error(errorMessage);
+    const error =
+      new Error(
+        errorMessage
+      ) as GoogleClassroomApiError;
+
+    error.status = response.status;
+
+    throw error;
   }
 
   return response.json() as Promise<T>;
@@ -79,8 +90,9 @@ async function classroomFetch<T>(
  * Get active Google Classroom courses visible to
  * the currently signed-in Google account.
  *
- * For now we do NOT use studentId=me because the
- * test account may be a teacher/admin.
+ * We intentionally do not filter by studentId=me
+ * because the connected Google account may also be
+ * a teacher/admin in some classes.
  */
 export async function getGoogleClassroomCourses(
   providerToken: string
@@ -129,6 +141,10 @@ export async function getGoogleClassroomCourses(
 
 /**
  * Get all published coursework for one Google course.
+ *
+ * Some visible courses may not allow this account
+ * to read coursework. In that case we skip the course
+ * rather than breaking the whole dashboard.
  */
 export async function getGoogleClassroomCoursework(
   courseId: string,
@@ -139,44 +155,71 @@ export async function getGoogleClassroomCoursework(
 
   let pageToken: string | undefined;
 
-  do {
-    const params = new URLSearchParams({
-      courseWorkStates: "PUBLISHED",
-      pageSize: "100",
-    });
+  try {
+    do {
+      const params = new URLSearchParams({
+        courseWorkStates: "PUBLISHED",
+        pageSize: "100",
+      });
 
-    if (pageToken) {
-      params.set(
-        "pageToken",
-        pageToken
+      if (pageToken) {
+        params.set(
+          "pageToken",
+          pageToken
+        );
+      }
+
+      const data =
+        await classroomFetch<{
+          courseWork?: GoogleClassroomCourseWork[];
+          nextPageToken?: string;
+        }>(
+          `${CLASSROOM_API_BASE}/courses/${encodeURIComponent(
+            courseId
+          )}/courseWork?${params.toString()}`,
+          providerToken
+        );
+
+      courseWork.push(
+        ...(data.courseWork ?? [])
       );
+
+      pageToken =
+        data.nextPageToken;
+    } while (pageToken);
+
+    return courseWork;
+  } catch (error) {
+    const apiError =
+      error as GoogleClassroomApiError;
+
+    if (
+      apiError.status === 403 ||
+      apiError.message
+        .toLowerCase()
+        .includes("permission")
+    ) {
+      console.warn(
+        `Skipping coursework for course ${courseId}: no permission`
+      );
+
+      return [];
     }
 
-    const data =
-      await classroomFetch<{
-        courseWork?: GoogleClassroomCourseWork[];
-        nextPageToken?: string;
-      }>(
-        `${CLASSROOM_API_BASE}/courses/${encodeURIComponent(
-          courseId
-        )}/courseWork?${params.toString()}`,
-        providerToken
-      );
-
-    courseWork.push(
-      ...(data.courseWork ?? [])
-    );
-
-    pageToken =
-      data.nextPageToken;
-  } while (pageToken);
-
-  return courseWork;
+    throw error;
+  }
 }
 
 /**
  * Get the current user's own submissions for
  * all coursework in a course.
+ *
+ * For actual student accounts, userId="me" is correct.
+ *
+ * If the connected Google account is a teacher/admin
+ * in a particular class, Google may return 403 for this
+ * student-specific endpoint. In that case we return []
+ * rather than failing the entire app.
  */
 export async function getMyGoogleClassroomSubmissions(
   courseId: string,
@@ -187,37 +230,57 @@ export async function getMyGoogleClassroomSubmissions(
 
   let pageToken: string | undefined;
 
-  do {
-    const params = new URLSearchParams({
-      userId: "me",
-      pageSize: "100",
-    });
+  try {
+    do {
+      const params = new URLSearchParams({
+        userId: "me",
+        pageSize: "100",
+      });
 
-    if (pageToken) {
-      params.set(
-        "pageToken",
-        pageToken
+      if (pageToken) {
+        params.set(
+          "pageToken",
+          pageToken
+        );
+      }
+
+      const data =
+        await classroomFetch<{
+          studentSubmissions?: GoogleClassroomSubmission[];
+          nextPageToken?: string;
+        }>(
+          `${CLASSROOM_API_BASE}/courses/${encodeURIComponent(
+            courseId
+          )}/courseWork/-/studentSubmissions?${params.toString()}`,
+          providerToken
+        );
+
+      submissions.push(
+        ...(data.studentSubmissions ?? [])
       );
+
+      pageToken =
+        data.nextPageToken;
+    } while (pageToken);
+
+    return submissions;
+  } catch (error) {
+    const apiError =
+      error as GoogleClassroomApiError;
+
+    if (
+      apiError.status === 403 ||
+      apiError.message
+        .toLowerCase()
+        .includes("permission")
+    ) {
+      console.warn(
+        `Skipping submissions for course ${courseId}: no permission`
+      );
+
+      return [];
     }
 
-    const data =
-      await classroomFetch<{
-        studentSubmissions?: GoogleClassroomSubmission[];
-        nextPageToken?: string;
-      }>(
-        `${CLASSROOM_API_BASE}/courses/${encodeURIComponent(
-          courseId
-        )}/courseWork/-/studentSubmissions?${params.toString()}`,
-        providerToken
-      );
-
-    submissions.push(
-      ...(data.studentSubmissions ?? [])
-    );
-
-    pageToken =
-      data.nextPageToken;
-  } while (pageToken);
-
-  return submissions;
+    throw error;
+  }
 }

@@ -1,5 +1,5 @@
 // src/components/BookingsPage.tsx
-import { useState } from "react";
+import { useState, type PointerEvent } from "react";
 import { Card } from "./ui/card";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
@@ -25,6 +25,7 @@ import {
 } from "./ui/select";
 import { Label } from "./ui/label";
 import { toast } from "sonner";
+import { supabase } from "../lib/supabase";
 
 // Subject color mapping - Marquis Brand
 const getSubjectStyle = (subject: string) => {
@@ -107,6 +108,39 @@ export function BookingsPage() {
   const [requestDate, setRequestDate] = useState("");
   const [requestTime, setRequestTime] = useState("");
   const [requestNote, setRequestNote] = useState("");
+
+  // Interactive lava background
+  const [lavaPointer, setLavaPointer] = useState({
+    x: 0,
+    y: 0,
+    active: false,
+  });
+
+  const updateLavaPointer = (
+    event: PointerEvent<HTMLDivElement>
+  ) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+
+    setLavaPointer({
+      x:
+        (event.clientX - rect.left) /
+          rect.width -
+        0.5,
+      y:
+        (event.clientY - rect.top) /
+          rect.height -
+        0.5,
+      active: true,
+    });
+  };
+
+  const resetLavaPointer = () => {
+    setLavaPointer({
+      x: 0,
+      y: 0,
+      active: false,
+    });
+  };
 
   // Merge API classes with local classes
   const apiClasses = getUpcomingClasses(currentStudent?.id);
@@ -427,27 +461,333 @@ export function BookingsPage() {
   return (
     <div
       className="min-h-screen pb-24 relative overflow-hidden"
-      style={{ background: "#FFFFFF" }}
+      onPointerMove={updateLavaPointer}
+      onPointerLeave={resetLavaPointer}
+      onPointerDown={(event) => {
+        updateLavaPointer(event);
+        setLavaPointer((prev) => ({
+          ...prev,
+          active: true,
+        }));
+      }}
+      onPointerUp={() =>
+        setLavaPointer((prev) => ({
+          ...prev,
+          active: false,
+        }))
+      }
+      style={{
+        background:
+          "linear-gradient(180deg, #F7F5EF 0%, #FBFAF7 48%, #F0ECE3 100%)",
+        color: "#111111",
+        touchAction: "pan-y",
+      }}
     >
-      {/* Warm Yellow Vignette at Top */}
+      {/* Faster, interactive lava-lamp background */}
       <div
-        className="absolute inset-0 pointer-events-none"
-        style={{
-          background:
-            "radial-gradient(circle at top right, rgba(255,213,0,0.18), transparent 70%)",
-          height: "50%",
-        }}
-      />
-
-      <div className="p-6 relative">
-        {/* Header */}
+        className="absolute inset-0 pointer-events-none overflow-hidden"
+        style={{ zIndex: 0 }}
+      >
         <motion.div
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="mb-6"
-        >
-          <div className="flex items-center justify-between mb-2">
-            {viewMode !== "schedule" && (
+          animate={{
+            x: lavaPointer.active
+              ? lavaPointer.x * 70
+              : [0, 36, -18, 0],
+            y: lavaPointer.active
+              ? lavaPointer.y * 52
+              : [0, 28, -12, 0],
+            scale: lavaPointer.active
+              ? 1.22
+              : [1, 1.11, 0.97, 1],
+          }}
+          transition={{
+            duration: lavaPointer.active ? 0.38 : 8.5,
+            repeat: lavaPointer.active ? 0 : Infinity,
+            ease: "easeInOut",
+          }}
+          style={{
+            position: "absolute",
+            width: "300px",
+            height: "300px",
+            borderRadius:
+              "46% 54% 58% 42% / 48% 42% 58% 52%",
+            top: "-86px",
+            right: "-118px",
+            background:
+              "radial-gradient(circle at 35% 35%, rgba(255,213,0,0.46), rgba(255,213,0,0.14) 56%, transparent 74%)",
+            filter: "blur(14px)",
+          }}
+        />
+
+        <motion.div
+          animate={{
+            x: lavaPointer.active
+              ? lavaPointer.x * -52
+              : [0, -30, 20, 0],
+            y: lavaPointer.active
+              ? lavaPointer.y * -42
+              : [0, -22, 30, 0],
+            scale: lavaPointer.active
+              ? 1.16
+              : [1, 0.95, 1.09, 1],
+          }}
+          transition={{
+            duration: lavaPointer.active ? 0.42 : 10,
+            repeat: lavaPointer.active ? 0 : Infinity,
+            ease: "easeInOut",
+          }}
+          style={{
+            position: "absolute",
+            width: "250px",
+            height: "250px",
+            borderRadius:
+              "58% 42% 46% 54% / 42% 58% 44% 56%",
+            top: "285px",
+            left: "-128px",
+            background:
+              "radial-gradient(circle at 55% 40%, rgba(17,17,17,0.16), rgba(125,125,125,0.08) 52%, transparent 72%)",
+            filter: "blur(17px)",
+          }}
+        />
+
+        <motion.div
+          animate={{
+            x: lavaPointer.active
+              ? lavaPointer.x * 58
+              : [0, 22, -30, 0],
+            y: lavaPointer.active
+              ? lavaPointer.y * 44
+              : [0, 30, 12, 0],
+            scale: lavaPointer.active
+              ? 1.18
+              : [1, 1.07, 0.96, 1],
+          }}
+          transition={{
+            duration: lavaPointer.active ? 0.4 : 9,
+            repeat: lavaPointer.active ? 0 : Infinity,
+            ease: "easeInOut",
+          }}
+          style={{
+            position: "absolute",
+            width: "235px",
+            height: "235px",
+            borderRadius:
+              "43% 57% 51% 49% / 56% 44% 58% 42%",
+            bottom: "110px",
+            right: "-102px",
+            background:
+              "radial-gradient(circle at 42% 38%, rgba(255,213,0,0.31), rgba(170,170,170,0.10) 58%, transparent 74%)",
+            filter: "blur(16px)",
+          }}
+        />
+
+        <motion.div
+          animate={{
+            x: lavaPointer.active
+              ? lavaPointer.x * -30
+              : [0, 15, -15, 0],
+            y: lavaPointer.active
+              ? lavaPointer.y * 28
+              : [0, -18, 18, 0],
+            scale: lavaPointer.active
+              ? 1.26
+              : [1, 1.06, 1],
+          }}
+          transition={{
+            duration: lavaPointer.active ? 0.32 : 7,
+            repeat: lavaPointer.active ? 0 : Infinity,
+            ease: "easeInOut",
+          }}
+          style={{
+            position: "absolute",
+            width: "170px",
+            height: "170px",
+            borderRadius: "50%",
+            top: "54%",
+            left: "58%",
+            background:
+              "radial-gradient(circle, rgba(255,255,255,0.58), rgba(255,255,255,0.08) 65%, transparent 78%)",
+            filter: "blur(12px)",
+          }}
+        />
+      </div>
+
+      <div className="p-6 relative" style={{ zIndex: 2 }}>
+        {/* Header */}
+        {viewMode === "schedule" ? (
+          <motion.section
+            initial={{ opacity: 0, y: -12 }}
+            animate={{ opacity: 1, y: 0 }}
+            style={{
+              position: "relative",
+              overflow: "hidden",
+              marginBottom: "20px",
+              padding: "22px",
+              borderRadius: "30px",
+              background:
+                "linear-gradient(145deg, rgba(255,255,255,0.76), rgba(255,255,255,0.50))",
+              backdropFilter: "blur(28px)",
+              WebkitBackdropFilter: "blur(28px)",
+              border: "1px solid rgba(255,255,255,0.94)",
+              boxShadow:
+                "0 18px 42px rgba(35,30,20,0.08), inset 0 1px 0 rgba(255,255,255,0.90)",
+            }}
+          >
+            <motion.div
+              aria-hidden="true"
+              animate={{
+                x: [0, 12, -7, 0],
+                y: [0, -8, 7, 0],
+                scale: [1, 1.07, 0.98, 1],
+              }}
+              transition={{
+                duration: 7,
+                repeat: Infinity,
+                ease: "easeInOut",
+              }}
+              style={{
+                position: "absolute",
+                width: "160px",
+                height: "160px",
+                right: "-65px",
+                top: "-62px",
+                borderRadius:
+                  "46% 54% 58% 42% / 48% 42% 58% 52%",
+                background:
+                  "radial-gradient(circle at 40% 35%, rgba(255,213,0,0.34), rgba(255,213,0,0.08) 60%, transparent 76%)",
+                filter: "blur(8px)",
+              }}
+            />
+
+            <div className="relative z-10">
+              <p
+                style={{
+                  margin: 0,
+                  color: "#9A7D00",
+                  fontSize: "11px",
+                  fontWeight: 900,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.08em",
+                }}
+              >
+                Classes
+              </p>
+
+              <div
+                className="flex items-center gap-3"
+                style={{ marginTop: "6px" }}
+              >
+                <h1
+                  style={{
+                    margin: 0,
+                    fontFamily:
+                      "Neurial Grotesk, sans-serif",
+                    fontWeight: 800,
+                    fontSize: "34px",
+                    lineHeight: 1,
+                    letterSpacing: "-0.04em",
+                    color: "#000000",
+                  }}
+                >
+                  My Classes
+                </h1>
+                <Calendar
+                  className="w-8 h-8"
+                  style={{ color: "#FFD500" }}
+                />
+              </div>
+
+              <p
+                style={{
+                  margin: "9px 0 0",
+                  fontFamily:
+                    "Neurial Grotesk, sans-serif",
+                  color: "#6E6E70",
+                  fontSize: "15px",
+                  lineHeight: 1.45,
+                }}
+              >
+                Your upcoming sessions
+              </p>
+
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns:
+                    "minmax(0,1fr) 58px",
+                  gap: "10px",
+                  marginTop: "20px",
+                }}
+              >
+                <motion.div
+                  whileHover={{
+                    y: -2,
+                    scale: 1.01,
+                  }}
+                  whileTap={{ scale: 0.98 }}
+                >
+                  <Button
+                    onClick={() =>
+                      setViewMode("book-new")
+                    }
+                    className="w-full border-0"
+                    style={{
+                      minHeight: "56px",
+                      borderRadius: "18px",
+                      background:
+                        "linear-gradient(135deg,#FFD500 0%,#FFDE3F 55%,#E8B600 100%)",
+                      color: "#111111",
+                      fontFamily:
+                        "Neurial Grotesk, sans-serif",
+                      fontSize: "16px",
+                      fontWeight: 800,
+                      boxShadow:
+                        "0 12px 28px rgba(255,213,0,0.22), inset 0 1px 0 rgba(255,255,255,0.58)",
+                    }}
+                  >
+                    <Calendar className="w-5 h-5 mr-2" />
+                    Book New Class
+                  </Button>
+                </motion.div>
+
+                <motion.div
+                  whileHover={{ y: -2 }}
+                  whileTap={{ scale: 0.95 }}
+                >
+                  <Button
+                    onClick={() =>
+                      setShowFilters(!showFilters)
+                    }
+                    variant="outline"
+                    className="w-full h-full p-0"
+                    style={{
+                      minHeight: "56px",
+                      borderRadius: "18px",
+                      border:
+                        "1px solid rgba(255,255,255,0.92)",
+                      background:
+                        "rgba(255,255,255,0.62)",
+                      backdropFilter:
+                        "blur(18px)",
+                      WebkitBackdropFilter:
+                        "blur(18px)",
+                      boxShadow:
+                        "0 10px 24px rgba(0,0,0,0.06)",
+                    }}
+                  >
+                    <Filter className="w-5 h-5" />
+                  </Button>
+                </motion.div>
+              </div>
+            </div>
+          </motion.section>
+        ) : (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-6"
+          >
+            <div className="flex items-center justify-between mb-2">
               <Button
                 variant="ghost"
                 onClick={() => {
@@ -458,7 +798,8 @@ export function BookingsPage() {
                 }}
                 className="px-3"
                 style={{
-                  fontFamily: "Neurial Grotesk, sans-serif",
+                  fontFamily:
+                    "Neurial Grotesk, sans-serif",
                   fontWeight: 600,
                   color: "#6E6E70",
                 }}
@@ -466,154 +807,42 @@ export function BookingsPage() {
                 <ChevronLeft className="w-4 h-4 mr-1" />
                 Back
               </Button>
-            )}
-            {viewMode === "schedule" && <div className="flex-1" />}
-          </div>
+            </div>
 
-          <h1
-            className="mt-0 mb-1 flex items-center gap-2"
-            style={{
-              fontFamily: "Neurial Grotesk, sans-serif",
-              fontWeight: 700,
-              fontSize: "28px",
-              color: "#000000",
-            }}
-          >
-            {viewMode === "schedule" && (
-              <>
-                My Classes
-                <Calendar className="w-7 h-7" style={{ color: "#FFD500" }} />
-              </>
-            )}
-            {viewMode === "book-new" && "Book a Class"}
-            {viewMode === "reschedule" && "Reschedule Class"}
-          </h1>
-          <p
-            className="text-sm"
-            style={{
-              fontFamily: "Neurial Grotesk, sans-serif",
-              color: "#6E6E70",
-              marginTop: "0",
-            }}
-          >
-            {viewMode === "schedule" && "Your upcoming sessions"}
-            {viewMode === "book-new" && "Choose a date and time"}
-            {viewMode === "reschedule" && "Select a new date and time"}
-          </p>
-        </motion.div>
+            <h1
+              className="mt-0 mb-1"
+              style={{
+                fontFamily:
+                  "Neurial Grotesk, sans-serif",
+                fontWeight: 700,
+                fontSize: "28px",
+                color: "#000000",
+              }}
+            >
+              {viewMode === "book-new"
+                ? "Book a Class"
+                : "Reschedule Class"}
+            </h1>
+
+            <p
+              className="text-sm"
+              style={{
+                fontFamily:
+                  "Neurial Grotesk, sans-serif",
+                color: "#6E6E70",
+                marginTop: "0",
+              }}
+            >
+              {viewMode === "book-new"
+                ? "Choose a date and time"
+                : "Select a new date and time"}
+            </p>
+          </motion.div>
+        )}
 
         {/* Schedule View */}
         {viewMode === "schedule" && (
           <div className="space-y-6">
-            {/* Action Buttons */}
-            <div className="flex gap-3">
-              <motion.div
-                className="flex-1"
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-              >
-                <Button
-                  onClick={() => setViewMode("book-new")}
-                  className="w-full rounded-2xl border-0"
-                  style={{
-                    background: "#FFD500",
-                    color: "#000000",
-                    fontFamily: "Neurial Grotesk, sans-serif",
-                    fontWeight: 700,
-                    padding: "20px",
-                    boxShadow: "0px 8px 16px rgba(255,213,0,0.25)",
-                  }}
-                >
-                  <Calendar className="w-5 h-5 mr-2" />
-                  Book New Class
-                </Button>
-              </motion.div>
-              <motion.div
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-              >
-                <Button
-                  onClick={() => setShowFilters(!showFilters)}
-                  variant="outline"
-                  className="rounded-2xl h-full px-6"
-                  style={{
-                    borderWidth: "2px",
-                    borderColor: "#E6E6E6",
-                    fontFamily: "Neurial Grotesk, sans-serif",
-                    fontWeight: 600,
-                    color: "#000000",
-                  }}
-                >
-                  <Filter className="w-5 h-5" />
-                </Button>
-              </motion.div>
-            </div>
-
-            {/* Pending change requests */}
-            {changeRequests.length > 0 && (
-              <Card
-                className="border-0 p-4"
-                style={{
-                  borderRadius: "18px",
-                  boxShadow: "0px 6px 18px rgba(0,0,0,0.04)",
-                  background: "#FFFFFF",
-                  border: "1px dashed #F59E0B",
-                }}
-              >
-                <p
-                  className="mb-3"
-                  style={{
-                    fontFamily: "Neurial Grotesk, sans-serif",
-                    fontWeight: 600,
-                    fontSize: "13px",
-                    color: "#92400E",
-                  }}
-                >
-                  Pending change requests
-                </p>
-                <div className="space-y-2">
-                  {changeRequests.map((req) => (
-                    <div
-                      key={req.id}
-                      className="flex items-center justify-between text-sm"
-                    >
-                      <div>
-                        <p
-                          style={{
-                            fontFamily: "Neurial Grotesk, sans-serif",
-                            fontWeight: 500,
-                            color: "#000000",
-                          }}
-                        >
-                          {req.subject}
-                        </p>
-                        <p
-                          style={{
-                            fontFamily: "Neurial Grotesk, sans-serif",
-                            color: "#6E6E70",
-                          }}
-                        >
-                          {req.requestedDate} • {req.requestedTime}
-                        </p>
-                      </div>
-                      <Badge
-                        className="border-0"
-                        style={{
-                          background: "#FEF3C7",
-                          color: "#92400E",
-                          fontFamily: "Neurial Grotesk, sans-serif",
-                          fontWeight: 600,
-                          fontSize: "11px",
-                        }}
-                      >
-                        Pending
-                      </Badge>
-                    </div>
-                  ))}
-                </div>
-              </Card>
-            )}
-
             {/* Filters */}
             <AnimatePresence>
               {showFilters && (
@@ -626,9 +855,13 @@ export function BookingsPage() {
                   <Card
                     className="border-0 p-5"
                     style={{
-                      borderRadius: "20px",
-                      boxShadow: "0px 10px 26px rgba(0, 0, 0, 0.06)",
-                      background: "#FFFFFF",
+                      borderRadius: "22px",
+                      background: "rgba(255,255,255,0.72)",
+                      backdropFilter: "blur(22px)",
+                      WebkitBackdropFilter: "blur(22px)",
+                      border: "1px solid rgba(255,255,255,0.90)",
+                      boxShadow:
+                        "0 14px 30px rgba(30,26,18,0.07), inset 0 1px 0 rgba(255,255,255,0.88)",
                     }}
                   >
                     <div className="grid grid-cols-2 gap-4">
@@ -705,9 +938,13 @@ export function BookingsPage() {
               <Card
                 className="border-0 p-8 text-center"
                 style={{
-                  borderRadius: "22px",
-                  boxShadow: "0px 10px 26px rgba(0, 0, 0, 0.06)",
-                  background: "#FFFFFF",
+                  borderRadius: "24px",
+                  background: "rgba(255,255,255,0.72)",
+                  backdropFilter: "blur(22px)",
+                  WebkitBackdropFilter: "blur(22px)",
+                  border: "1px solid rgba(255,255,255,0.92)",
+                  boxShadow:
+                    "0 16px 36px rgba(30,26,18,0.08), inset 0 1px 0 rgba(255,255,255,0.88)",
                 }}
               >
                 <Calendar
@@ -722,14 +959,26 @@ export function BookingsPage() {
                 >
                   No upcoming classes booked
                 </p>
+                <p
+                  style={{
+                    marginTop: "6px",
+                    color: "#9A938B",
+                    fontSize: "13px",
+                    lineHeight: 1.45,
+                  }}
+                >
+                  Looks like your schedule is wide open. Let’s change that.
+                </p>
                 <Button
                   onClick={() => setViewMode("book-new")}
                   className="mt-4 rounded-xl border-0"
                   style={{
-                    background: "#FFD500",
+                    background:
+                      "linear-gradient(135deg, #FFD500 0%, #FFDF42 58%, #F0BD00 100%)",
                     color: "#000000",
                     fontFamily: "Neurial Grotesk, sans-serif",
-                    fontWeight: 600,
+                    fontWeight: 700,
+                    boxShadow: "0 8px 18px rgba(255,213,0,0.20)",
                   }}
                 >
                   Book a Class
@@ -755,7 +1004,10 @@ export function BookingsPage() {
                           boxShadow: cls.cancelled
                             ? "0px 4px 12px rgba(0, 0, 0, 0.04)"
                             : "0px 10px 26px rgba(0, 0, 0, 0.06)",
-                          background: "#FFFFFF",
+                          background: "rgba(255,255,255,0.72)",
+                          backdropFilter: "blur(22px)",
+                          WebkitBackdropFilter: "blur(22px)",
+                          border: "1px solid rgba(255,255,255,0.90)",
                           borderLeft: `4px solid ${styles.border}`,
                           opacity: cls.cancelled ? 0.6 : 1,
                         }}
@@ -943,9 +1195,13 @@ export function BookingsPage() {
               <Card
                 className="border-0 p-6"
                 style={{
-                  borderRadius: "22px",
-                  boxShadow: "0px 10px 26px rgba(0, 0, 0, 0.06)",
-                  background: "#FFFFFF",
+                  borderRadius: "24px",
+                  background: "rgba(255,255,255,0.72)",
+                  backdropFilter: "blur(22px)",
+                  WebkitBackdropFilter: "blur(22px)",
+                  border: "1px solid rgba(255,255,255,0.92)",
+                  boxShadow:
+                    "0 16px 36px rgba(30,26,18,0.08), inset 0 1px 0 rgba(255,255,255,0.88)",
                 }}
               >
                 {/* Month Navigation */}
@@ -1059,7 +1315,7 @@ export function BookingsPage() {
                           background: isSelected
                             ? "#FFD500"
                             : date && !isPast
-                            ? "#F7F7F7"
+                            ? "rgba(255,255,255,0.52)"
                             : "transparent",
                           color: isSelected
                             ? "#000000"
@@ -1129,9 +1385,13 @@ export function BookingsPage() {
                 <Card
                   className="border-0 p-6"
                   style={{
-                    borderRadius: "22px",
-                    boxShadow: "0px 10px 26px rgba(0, 0, 0, 0.06)",
-                    background: "#FFFFFF",
+                    borderRadius: "24px",
+                    background: "rgba(255,255,255,0.72)",
+                    backdropFilter: "blur(22px)",
+                    WebkitBackdropFilter: "blur(22px)",
+                    border: "1px solid rgba(255,255,255,0.92)",
+                    boxShadow:
+                      "0 16px 36px rgba(30,26,18,0.08), inset 0 1px 0 rgba(255,255,255,0.88)",
                   }}
                 >
                   <h3
@@ -1185,7 +1445,11 @@ export function BookingsPage() {
                           disabled={!isAvailable}
                           className="p-4 rounded-2xl text-left transition-all disabled:cursor-not-allowed"
                           style={{
-                            background: isSelectedTime ? "#FFD500" : "#FFFFFF",
+                            background: isSelectedTime
+                              ? "linear-gradient(135deg,#FFD500,#FFDF42)"
+                              : "rgba(255,255,255,0.62)",
+                            backdropFilter: "blur(18px)",
+                            WebkitBackdropFilter: "blur(18px)",
                             border: isSelectedTime
                               ? "none"
                               : "2px solid #E6E6E6",
@@ -1254,9 +1518,11 @@ export function BookingsPage() {
                   className="border-0 p-5"
                   style={{
                     borderRadius: "22px",
-                    boxShadow: "0px 8px 20px rgba(0,0,0,0.04)",
-                    background: "#FFFFFF",
-                    border: "1px dashed #E6E6E6",
+                    background: "rgba(255,255,255,0.68)",
+                    backdropFilter: "blur(20px)",
+                    WebkitBackdropFilter: "blur(20px)",
+                    border: "1px solid rgba(255,255,255,0.88)",
+                    boxShadow: "0 12px 28px rgba(30,26,18,0.06)",
                   }}
                 >
                   <div className="flex justify-between items-center mb-3">
@@ -1348,41 +1614,156 @@ export function BookingsPage() {
                         />
                       </div>
                       <Button
-                        onClick={() => {
+                        onClick={async () => {
                           if (!requestDate || !requestTime) {
                             toast.error("Please pick a date and time");
                             return;
                           }
 
-                          const iso = requestDate;
-                          const displayDate = new Date(
-                            requestDate
-                          ).toLocaleDateString("en-AU", {
-                            weekday: "short",
-                            month: "short",
-                            day: "numeric",
-                          });
+                          if (!currentStudent?.id) {
+                            toast.error("Student account not found");
+                            return;
+                          }
 
-                          const newRequest: ChangeRequest = {
-                            id: Date.now(),
-                            subject: currentStudent?.subject || "Class",
-                            requestedDate: displayDate,
-                            requestedISODate: iso,
-                            requestedTime: requestTime,
-                            note: requestNote || undefined,
-                            status: "pending",
-                          };
+                          try {
+                            const requestedDateTime = new Date(
+                              `${requestDate}T${requestTime}:00`
+                            );
 
-                          setChangeRequests((prev) => [...prev, newRequest]);
-                          setRequestDate("");
-                          setRequestTime("");
-                          setRequestNote("");
-                          setShowRequestForm(false);
+                            if (Number.isNaN(requestedDateTime.getTime())) {
+                              toast.error("Please enter a valid date and time");
+                              return;
+                            }
 
-                          toast("Request sent", {
-                            description:
-                              "Your change request has been submitted and is pending approval.",
-                          });
+                            const { data, error } = await supabase
+                              .from("class_change_requests")
+                              .insert({
+                                student_id: currentStudent.id,
+                                class_id: classToReschedule?.id
+                                  ? String(classToReschedule.id)
+                                  : null,
+                                current_class_time: null,
+                                requested_class_time:
+                                  requestedDateTime.toISOString(),
+                                reason: requestNote.trim() || null,
+                                status: "pending",
+                              })
+                              .select("id")
+                              .single();
+
+                            if (error) {
+                              console.error(
+                                "Change request insert failed:",
+                                error
+                              );
+                              toast.error("Could not send request", {
+                                description:
+                                  error.message ||
+                                  "Please try again in a moment.",
+                              });
+                              return;
+                            }
+
+                            const displayDate =
+                              requestedDateTime.toLocaleDateString(
+                                "en-AU",
+                                {
+                                  weekday: "long",
+                                  month: "long",
+                                  day: "numeric",
+                                  year: "numeric",
+                                }
+                              );
+
+                            const studentRecord = currentStudent as any;
+
+                            const studentName =
+                              studentRecord.fullName ||
+                              studentRecord.name ||
+                              [
+                                studentRecord.firstName,
+                                studentRecord.lastName,
+                              ]
+                                .filter(Boolean)
+                                .join(" ") ||
+                              studentRecord.email ||
+                              `Student ${currentStudent.id}`;
+
+                            const { error: emailError } =
+                              await supabase.functions.invoke(
+                                "send-class-change-email",
+                                {
+                                  body: {
+                                    requestId: data.id,
+                                    studentName,
+                                    subject:
+                                      currentStudent.subject ||
+                                      classToReschedule?.subject ||
+                                      "Class",
+                                    requestedDate: displayDate,
+                                    requestedTime: requestTime,
+                                    reason:
+                                      requestNote.trim() ||
+                                      "No reason supplied",
+                                  },
+                                }
+                              );
+
+                            if (emailError) {
+                              console.error(
+                                "Change request was saved, but admin email failed:",
+                                emailError
+                              );
+
+                              toast.warning(
+                                "Request saved, but notification failed",
+                                {
+                                  description:
+                                    "Your request is safely stored in Marquis. The admin email could not be sent automatically.",
+                                }
+                              );
+                            }
+
+                            const newRequest: ChangeRequest = {
+                              id:
+                                typeof data?.id === "number"
+                                  ? data.id
+                                  : Date.now(),
+                              subject:
+                                currentStudent.subject || "Class",
+                              requestedDate: displayDate,
+                              requestedISODate: requestDate,
+                              requestedTime: requestTime,
+                              note:
+                                requestNote.trim() || undefined,
+                              status: "pending",
+                            };
+
+                            setChangeRequests((prev) => [
+                              ...prev,
+                              newRequest,
+                            ]);
+                            setRequestDate("");
+                            setRequestTime("");
+                            setRequestNote("");
+                            setShowRequestForm(false);
+
+                            if (!emailError) {
+                              toast.success("Request sent to Marquis", {
+                                description:
+                                  "Your preferred class time has been saved and the Marquis admin team has been notified by email.",
+                              });
+                            }
+                          } catch (err) {
+                            console.error(
+                              "Unexpected change request error:",
+                              err
+                            );
+                            toast.error("Something went wrong", {
+                              description:
+                                "Your request could not be submitted. Please try again.",
+                            });
+                          }
                         }}
                         className="w-full rounded-2xl border-0"
                         style={{
@@ -1470,9 +1851,12 @@ export function BookingsPage() {
               <Card
                 className="border-0 p-8 max-w-md mx-auto text-center"
                 style={{
-                  borderRadius: "24px",
-                  boxShadow: "0px 20px 40px rgba(0, 0, 0, 0.15)",
-                  background: "#FFFFFF",
+                  borderRadius: "26px",
+                  background: "rgba(255,255,255,0.90)",
+                  backdropFilter: "blur(28px)",
+                  WebkitBackdropFilter: "blur(28px)",
+                  border: "1px solid rgba(255,255,255,0.95)",
+                  boxShadow: "0 22px 46px rgba(0,0,0,0.16)",
                 }}
               >
                 <motion.div

@@ -1,5 +1,6 @@
-import { useState, useEffect } from "react";
-import { motion } from "motion/react";
+import { useMemo, useState } from "react";
+import { motion, AnimatePresence } from "motion/react";
+import { Sparkles } from "lucide-react";
 
 interface OrbitalTimerProps {
   sessionsCompleted: number;
@@ -8,330 +9,544 @@ interface OrbitalTimerProps {
   totalTime: number;
 }
 
-export function OrbitalTimer({ sessionsCompleted, isActive, progress, totalTime }: OrbitalTimerProps) {
-  const [hoveredPlanet, setHoveredPlanet] = useState<number | null>(null);
-  const [sparkles, setSparkles] = useState<Array<{ id: number; x: number; y: number; delay: number }>>([]);
-  
-  // Planet configuration with Marquis colors (Yellow, Black, Grey shades)
-  const planets = [
-    { radius: 32, speed: 15, color: '#FFD500', size: 4.5, name: 'Mercury', hasRing: false },
-    { radius: 48, speed: 25, color: '#FDB022', size: 5, name: 'Venus', hasRing: false },
-    { radius: 64, speed: 35, color: '#6E6E70', size: 5.5, name: 'Earth', hasRing: false },
-    { radius: 80, speed: 45, color: '#4A4A4C', size: 6, name: 'Mars', hasRing: false },
-    { radius: 96, speed: 55, color: '#2A2A2C', size: 6.5, name: 'Jupiter', hasRing: true },
-    { radius: 112, speed: 65, color: '#000000', size: 7, name: 'Saturn', hasRing: true },
-  ];
-  
-  // Start with 1 planet, add 1 planet per session completed (max 6 planets after 5 sessions)
-  const visiblePlanets = Math.min(sessionsCompleted + 1, planets.length);
+interface PlanetConfig {
+  name: string;
+  size: number;
+  orbitDiameter: number;
+  duration: number;
+  angle: number;
+  base: string;
+  texture: string;
+  accent: string;
+  ring?: boolean;
+  moon?: boolean;
+}
 
-  // Initialize sparkles
-  useEffect(() => {
-    const newSparkles = Array.from({ length: 8 }).map((_, i) => ({
-      id: i,
-      x: Math.random() * 200 - 100,
-      y: Math.random() * 200 - 100,
-      delay: Math.random() * 5,
-    }));
-    setSparkles(newSparkles);
-  }, []);
+const PLANETS: PlanetConfig[] = [
+  {
+    name: "Mercury",
+    size: 18,
+    orbitDiameter: 118,
+    duration: 18,
+    angle: -74,
+    base:
+      "radial-gradient(circle at 31% 26%, #EEE7DD 0%, #B8AA98 33%, #786A5C 68%, #2E2924 100%)",
+    texture:
+      "radial-gradient(circle at 35% 34%, rgba(56,49,43,.35) 0 9%, transparent 10%), radial-gradient(circle at 68% 60%, rgba(255,255,255,.11) 0 6%, transparent 7%)",
+    accent: "#B6A282",
+  },
+  {
+    name: "Venus",
+    size: 23,
+    orbitDiameter: 154,
+    duration: 24,
+    angle: 31,
+    base:
+      "radial-gradient(circle at 31% 25%, #F5DEB5 0%, #C99A61 35%, #895B36 68%, #332219 100%)",
+    texture:
+      "linear-gradient(18deg, transparent 28%, rgba(255,242,211,.18) 34% 41%, transparent 47%), linear-gradient(-22deg, transparent 50%, rgba(91,56,35,.20) 55% 62%, transparent 68%)",
+    accent: "#CAA06C",
+  },
+  {
+    name: "Earth",
+    size: 28,
+    orbitDiameter: 192,
+    duration: 31,
+    angle: 151,
+    base:
+      "radial-gradient(circle at 30% 24%, #DDF8FF 0%, #63AAD3 26%, #275F95 58%, #0B2944 100%)",
+    texture:
+      "radial-gradient(ellipse at 38% 39%, #688F52 0 13%, transparent 14%), radial-gradient(ellipse at 62% 63%, #4B7C4A 0 11%, transparent 12%), radial-gradient(ellipse at 54% 31%, rgba(255,255,255,.30) 0 7%, transparent 8%), linear-gradient(17deg, transparent 44%, rgba(255,255,255,.18) 47% 51%, transparent 54%)",
+    accent: "#6B9DB2",
+    moon: true,
+  },
+  {
+    name: "Mars",
+    size: 22,
+    orbitDiameter: 232,
+    duration: 38,
+    angle: 232,
+    base:
+      "radial-gradient(circle at 30% 24%, #EAB9A2 0%, #B76045 36%, #71382B 68%, #2A1916 100%)",
+    texture:
+      "radial-gradient(circle at 41% 31%, rgba(87,42,31,.42) 0 9%, transparent 10%), radial-gradient(ellipse at 68% 65%, rgba(242,168,129,.18) 0 11%, transparent 12%)",
+    accent: "#A56550",
+  },
+  {
+    name: "Jupiter",
+    size: 38,
+    orbitDiameter: 274,
+    duration: 46,
+    angle: 314,
+    base:
+      "repeating-linear-gradient(174deg, #DFC69F 0 5px, #AC765A 6px 10px, #E9D1AA 11px 16px, #805B48 17px 21px)",
+    texture:
+      "radial-gradient(ellipse at 70% 60%, rgba(145,62,47,.60) 0 8%, transparent 9%)",
+    accent: "#C09A75",
+  },
+  {
+    name: "Saturn",
+    size: 32,
+    orbitDiameter: 316,
+    duration: 54,
+    angle: 82,
+    base:
+      "radial-gradient(circle at 31% 25%, #EFE1B8 0%, #C9AE79 39%, #857054 70%, #342C24 100%)",
+    texture:
+      "repeating-linear-gradient(172deg, transparent 0 5px, rgba(255,255,255,.07) 6px 7px, transparent 8px 12px)",
+    accent: "#BFA36D",
+    ring: true,
+  },
+];
 
-  const getPlanetPosition = (radius: number, angle: number, tilt: number = 0) => {
-    const rad = (angle - 90) * (Math.PI / 180);
-    const tiltRad = tilt * (Math.PI / 180);
-    return {
-      x: radius * Math.cos(rad),
-      y: radius * Math.sin(rad) * Math.cos(tiltRad),
-    };
-  };
-
-  const getDepthScale = (angle: number) => {
-    const normalizedAngle = angle % 360;
-    return normalizedAngle < 180 
-      ? 1 - (normalizedAngle / 180) * 0.2
-      : 0.8 + ((normalizedAngle - 180) / 180) * 0.2;
-  };
-
+function PlanetSurface({
+  planet,
+  selected,
+  onSelect,
+}: {
+  planet: PlanetConfig;
+  selected: boolean;
+  onSelect: () => void;
+}) {
   return (
-    <div className="relative w-64 h-64 mx-auto">
-      {/* Background */}
-      <div 
-        className="absolute inset-0 rounded-full"
+    <motion.button
+      type="button"
+      title={planet.name}
+      onClick={onSelect}
+      whileHover={{ scale: 1.12 }}
+      whileTap={{ scale: 0.95 }}
+      style={{
+        position: "relative",
+        width: planet.size,
+        height: planet.size,
+        padding: 0,
+        border: "1px solid rgba(255,255,255,.12)",
+        borderRadius: "50%",
+        background: planet.base,
+        boxShadow:
+          "inset -7px -7px 12px rgba(0,0,0,.48), inset 3px 3px 7px rgba(255,255,255,.18), 0 6px 14px rgba(0,0,0,.38)",
+        cursor: "pointer",
+        overflow: "visible",
+      }}
+    >
+      <span
         style={{
-          background: 'radial-gradient(circle at center, #FFFDF7 0%, #FFF8E5 100%)',
+          position: "absolute",
+          inset: 0,
+          borderRadius: "50%",
+          overflow: "hidden",
+          background: planet.texture,
+        }}
+      />
+      <span
+        style={{
+          position: "absolute",
+          left: "19%",
+          top: "14%",
+          width: "22%",
+          height: "22%",
+          borderRadius: "50%",
+          background: "rgba(255,255,255,.17)",
+          filter: "blur(.8px)",
         }}
       />
 
-      <svg viewBox="0 0 256 256" className="absolute inset-0 w-full h-full">
-        <defs>
-          {/* Sun (Star) Gradients - Marquis Yellow */}
-          <radialGradient id="sun-core">
-            <stop offset="0%" stopColor="#FFFFFF" stopOpacity="1" />
-            <stop offset="30%" stopColor="#FFD500" stopOpacity="1" />
-            <stop offset="60%" stopColor="#FDB022" stopOpacity="0.9" />
-            <stop offset="100%" stopColor="#FFE680" stopOpacity="0.4" />
-          </radialGradient>
-
-          <radialGradient id="sun-glow">
-            <stop offset="0%" stopColor="#FFD500" stopOpacity="0.4" />
-            <stop offset="50%" stopColor="#FDB022" stopOpacity="0.3" />
-            <stop offset="100%" stopColor="#FFE680" stopOpacity="0" />
-          </radialGradient>
-
-          {/* Planet Gradients */}
-          {planets.map((planet, i) => (
-            <radialGradient key={`planet-grad-${i}`} id={`planet-gradient-${i}`}>
-              <stop offset="0%" stopColor={planet.color} stopOpacity="1" />
-              <stop offset="50%" stopColor={planet.color} stopOpacity="1" />
-              <stop offset="100%" stopColor={planet.color} stopOpacity="0.8" />
-            </radialGradient>
-          ))}
-
-          {/* Orbit Gradient */}
-          <linearGradient id="orbit-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" stopColor="#FFD500" stopOpacity="0.08" />
-            <stop offset="50%" stopColor="#FDB022" stopOpacity="0.15" />
-            <stop offset="100%" stopColor="#FFD500" stopOpacity="0.08" />
-          </linearGradient>
-
-          {/* Filters */}
-          <filter id="glow">
-            <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
-            <feMerge>
-              <feMergeNode in="coloredBlur"/>
-              <feMergeNode in="SourceGraphic"/>
-            </feMerge>
-          </filter>
-        </defs>
-
-        {/* Central Sun */}
-        <g transform="translate(128, 128)">
-          {/* Outer glow */}
-          <motion.circle
-            r="35"
-            fill="url(#sun-glow)"
-            style={{ filter: 'blur(60px)' }}
-            animate={{
-              scale: [1, 1.05, 1],
-              opacity: [0.3, 0.4, 0.3],
-            }}
-            transition={{ 
-              duration: 3, 
-              repeat: Infinity,
-              ease: "easeInOut",
+      {planet.ring && (
+        <>
+          <span
+            style={{
+              position: "absolute",
+              zIndex: -1,
+              width: "176%",
+              height: "50%",
+              left: "-38%",
+              top: "25%",
+              borderRadius: "50%",
+              border: "2px solid rgba(211,188,126,.44)",
+              transform: "rotate(-13deg)",
+              clipPath: "inset(0 0 50% 0)",
             }}
           />
-
-          {/* Mid glow */}
-          <motion.circle
-            r="20"
-            fill="url(#sun-glow)"
-            style={{ filter: 'blur(30px)' }}
-            animate={{
-              scale: [1, 1.03, 1],
-              opacity: [0.4, 0.5, 0.4],
-            }}
-            transition={{ 
-              duration: 3, 
-              repeat: Infinity,
-              ease: "easeInOut",
-              delay: 0.5
+          <span
+            style={{
+              position: "absolute",
+              zIndex: 3,
+              width: "176%",
+              height: "50%",
+              left: "-38%",
+              top: "25%",
+              borderRadius: "50%",
+              border: "2px solid rgba(224,202,141,.62)",
+              transform: "rotate(-13deg)",
+              clipPath: "inset(50% 0 0 0)",
             }}
           />
+        </>
+      )}
 
-          {/* Sun core */}
-          <motion.circle
-            r="12"
-            fill="url(#sun-core)"
-            filter="url(#glow)"
-            animate={{
-              scale: [1, 1.05, 1],
-            }}
-            transition={{ 
-              duration: 3,
-              repeat: Infinity,
-              ease: "easeInOut",
-            }}
-          />
+      {planet.moon && (
+        <span
+          style={{
+            position: "absolute",
+            right: "-8px",
+            top: "5px",
+            width: "5px",
+            height: "5px",
+            borderRadius: "50%",
+            background:
+              "radial-gradient(circle at 30% 25%,#EEEAE2,#A6A098 56%,#48443F 100%)",
+            boxShadow: "0 1px 3px rgba(0,0,0,.4)",
+          }}
+        />
+      )}
 
-          {/* Inner white core */}
-          <motion.circle
-            r="6"
-            fill="#FFFFFF"
-            opacity="0.9"
-            animate={{
-              opacity: [0.85, 0.95, 0.85],
-              scale: [1, 1.02, 1],
-            }}
-            transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
-          />
+      {selected && (
+        <span
+          style={{
+            position: "absolute",
+            inset: "-5px",
+            borderRadius: "50%",
+            border: `1px solid ${planet.accent}`,
+            opacity: 0.5,
+          }}
+        />
+      )}
+    </motion.button>
+  );
+}
 
-          {/* Sparkle particles */}
-          {sparkles.map((sparkle) => (
-            <motion.circle
-              key={sparkle.id}
-              cx={sparkle.x}
-              cy={sparkle.y}
-              r="1.5"
-              fill="#FFE680"
-              initial={{ opacity: 0, scale: 0 }}
-              animate={{
-                opacity: isActive ? [0, 1, 0] : [0, 0.6, 0],
-                scale: [0, 1.2, 0],
-              }}
-              transition={{
-                duration: 4,
-                repeat: Infinity,
-                delay: sparkle.delay,
-                ease: "easeInOut",
-              }}
-              style={{
-                filter: 'blur(0.5px)',
-              }}
+export function OrbitalTimer({
+  sessionsCompleted,
+  isActive,
+  progress,
+}: OrbitalTimerProps) {
+  const [selected, setSelected] = useState<string | null>(null);
+
+  // Session 0 still shows one starter planet.
+  // Every completed focus session unlocks exactly one more.
+  const unlockedCount = Math.min(
+    PLANETS.length,
+    Math.max(1, sessionsCompleted + 1)
+  );
+
+  const unlocked = useMemo(
+    () => PLANETS.slice(0, unlockedCount),
+    [unlockedCount]
+  );
+
+  const nextPlanet =
+    unlockedCount < PLANETS.length ? PLANETS[unlockedCount].name : null;
+
+  const progressPct = Math.max(0, Math.min(100, progress));
+
+  return (
+    <motion.div
+      animate={{
+        boxShadow: isActive
+          ? [
+              "0 22px 48px rgba(20,22,28,.16)",
+              "0 28px 60px rgba(20,22,28,.22)",
+              "0 22px 48px rgba(20,22,28,.16)",
+            ]
+          : "0 22px 48px rgba(20,22,28,.14)",
+      }}
+      transition={{
+        duration: 4,
+        repeat: isActive ? Infinity : 0,
+        ease: "easeInOut",
+      }}
+      style={{
+        position: "relative",
+        width: "100%",
+        maxWidth: "440px",
+        height: "430px",
+        margin: "0 auto",
+        overflow: "hidden",
+        borderRadius: "30px",
+        background:
+          "radial-gradient(circle at 50% 42%, rgba(203,157,52,.055), transparent 30%), linear-gradient(155deg,#181A1F 0%,#0D0F13 58%,#060709 100%)",
+        border: "1px solid rgba(255,255,255,.09)",
+        isolation: "isolate",
+      }}
+    >
+      {/* restrained star field */}
+      {Array.from({ length: 30 }).map((_, index) => (
+        <motion.span
+          key={index}
+          animate={{ opacity: [0.1, 0.52, 0.1] }}
+          transition={{
+            duration: 3.2 + (index % 6) * 0.7,
+            delay: (index % 9) * 0.14,
+            repeat: Infinity,
+          }}
+          style={{
+            position: "absolute",
+            left: `${5 + ((index * 37) % 90)}%`,
+            top: `${5 + ((index * 53) % 78)}%`,
+            width: index % 8 === 0 ? "2px" : "1px",
+            height: index % 8 === 0 ? "2px" : "1px",
+            borderRadius: "50%",
+            background: index % 7 === 0 ? "#B7953B" : "#FFFFFF",
+          }}
+        />
+      ))}
+
+      {/* scientific guide axes */}
+      <div
+        style={{
+          position: "absolute",
+          left: "50%",
+          top: "24px",
+          bottom: "92px",
+          width: "1px",
+          background:
+            "linear-gradient(180deg,transparent,rgba(191,149,58,.16),rgba(191,149,58,.11),transparent)",
+        }}
+      />
+      <div
+        style={{
+          position: "absolute",
+          top: "42%",
+          left: "22px",
+          right: "22px",
+          height: "1px",
+          background:
+            "linear-gradient(90deg,transparent,rgba(191,149,58,.08),rgba(191,149,58,.08),transparent)",
+        }}
+      />
+
+      {/* orbit rings */}
+      {PLANETS.map((planet, index) => (
+        <div
+          key={planet.name}
+          style={{
+            position: "absolute",
+            left: "50%",
+            top: "42%",
+            width: planet.orbitDiameter,
+            height: planet.orbitDiameter,
+            marginLeft: -planet.orbitDiameter / 2,
+            marginTop: -planet.orbitDiameter / 2,
+            borderRadius: "50%",
+            border: `1px solid rgba(191,149,58,${
+              index < unlockedCount ? 0.15 : 0.055
+            })`,
+          }}
+        />
+      ))}
+
+      {/* small central sun */}
+      <motion.div
+        animate={{
+          scale: isActive ? [1, 1.025, 1] : 1,
+          boxShadow: isActive
+            ? [
+                "0 0 13px rgba(233,201,107,.42),0 0 24px rgba(190,132,34,.15)",
+                "0 0 17px rgba(233,201,107,.52),0 0 32px rgba(190,132,34,.22)",
+                "0 0 13px rgba(233,201,107,.42),0 0 24px rgba(190,132,34,.15)",
+              ]
+            : "0 0 13px rgba(233,201,107,.42),0 0 24px rgba(190,132,34,.15)",
+        }}
+        transition={{
+          duration: 3.2,
+          repeat: isActive ? Infinity : 0,
+          ease: "easeInOut",
+        }}
+        style={{
+          position: "absolute",
+          zIndex: 20,
+          left: "50%",
+          top: "42%",
+          width: 62,
+          height: 62,
+          marginLeft: -31,
+          marginTop: -31,
+          borderRadius: "50%",
+          background:
+            "radial-gradient(circle at 34% 29%,#FFF8DB 0%,#F2D886 14%,#DBAC38 39%,#A96612 68%,#5C3307 84%,#251305 100%)",
+          border: "1px solid rgba(255,255,255,.10)",
+          boxShadow:
+            "0 0 13px rgba(233,201,107,.42),0 0 24px rgba(190,132,34,.15)",
+        }}
+      >
+        <span
+          style={{
+            position: "absolute",
+            inset: "10%",
+            borderRadius: "50%",
+            background:
+              "radial-gradient(circle at 28% 30%,rgba(255,255,255,.45) 0 4%,transparent 5%),radial-gradient(circle at 64% 30%,rgba(239,194,74,.38) 0 8%,transparent 9%),radial-gradient(circle at 67% 67%,rgba(112,61,8,.30) 0 8%,transparent 9%)",
+          }}
+        />
+      </motion.div>
+
+      {/* planets move only while timer is running */}
+      {unlocked.map((planet, index) => (
+        <motion.div
+          key={planet.name}
+          initial={{ rotate: planet.angle }}
+          animate={{
+            rotate: isActive ? planet.angle + 360 : planet.angle,
+          }}
+          transition={{
+            duration: planet.duration,
+            repeat: isActive ? Infinity : 0,
+            ease: "linear",
+          }}
+          style={{
+            position: "absolute",
+            zIndex: 25 + index,
+            left: "50%",
+            top: "42%",
+            width: planet.orbitDiameter,
+            height: planet.orbitDiameter,
+            marginLeft: -planet.orbitDiameter / 2,
+            marginTop: -planet.orbitDiameter / 2,
+            transformOrigin: "center",
+            pointerEvents: "none",
+          }}
+        >
+          <div
+            style={{
+              position: "absolute",
+              left: "50%",
+              top: -planet.size / 2,
+              transform: "translateX(-50%)",
+              pointerEvents: "auto",
+            }}
+          >
+            <PlanetSurface
+              planet={planet}
+              selected={selected === planet.name}
+              onSelect={() =>
+                setSelected((current) =>
+                  current === planet.name ? null : planet.name
+                )
+              }
             />
-          ))}
 
-          {/* Orbit Paths and Planets */}
-          {planets.map((planet, i) => {
-            if (i >= visiblePlanets) return null;
-            
-            const planetAngle = isActive ? ((Date.now() / (planet.speed * 1000)) % 1) * 360 : 0;
-            const position = getPlanetPosition(planet.radius, planetAngle, i * 2);
-            const depthScale = getDepthScale(planetAngle);
-            
-            return (
-              <g key={`planet-system-${i}`}>
-                {/* Orbit ring */}
-                <motion.ellipse
-                  cx="0"
-                  cy="0"
-                  rx={planet.radius}
-                  ry={planet.radius * Math.cos((i * 2) * Math.PI / 180)}
-                  fill="none"
-                  stroke="url(#orbit-gradient)"
-                  strokeWidth="1"
-                  initial={{ scale: 0.9, opacity: 0 }}
-                  animate={{ 
-                    scale: 1, 
-                    opacity: i === visiblePlanets - 1 ? 0.25 : 0.15,
-                  }}
-                  transition={{ duration: 0.8, ease: "easeOut" }}
-                />
+            <div
+              style={{
+                position: "absolute",
+                left: "50%",
+                top: planet.size + 6,
+                transform: "translateX(-50%)",
+                color:
+                  selected === planet.name
+                    ? planet.accent
+                    : "rgba(210,203,187,.50)",
+                fontSize: "7px",
+                fontWeight: 800,
+                letterSpacing: ".05em",
+                textTransform: "uppercase",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {planet.name}
+            </div>
+          </div>
+        </motion.div>
+      ))}
 
-                {/* Planet trail */}
-                {isActive && (
-                  <>
-                    {Array.from({ length: 4 }).map((_, trailIndex) => {
-                      const trailAngle = planetAngle - (trailIndex + 1) * 8;
-                      const trailPos = getPlanetPosition(planet.radius, trailAngle, i * 2);
-                      const trailOpacity = (0.4 - trailIndex * 0.1);
-                      
-                      return (
-                        <motion.circle
-                          key={`trail-${i}-${trailIndex}`}
-                          cx={trailPos.x}
-                          cy={trailPos.y}
-                          r={planet.size - trailIndex * 0.5}
-                          fill={planet.color}
-                          opacity={trailOpacity}
-                          style={{ filter: 'blur(2px)' }}
-                        />
-                      );
-                    })}
-                  </>
-                )}
+      {/* compact atlas HUD */}
+      <div
+        style={{
+          position: "absolute",
+          zIndex: 60,
+          left: "14px",
+          right: "14px",
+          bottom: "13px",
+          display: "grid",
+          gridTemplateColumns: "1fr auto",
+          gap: "12px",
+          alignItems: "center",
+          padding: "12px 13px",
+          borderRadius: "18px",
+          background: "rgba(255,255,255,.042)",
+          backdropFilter: "blur(18px)",
+          WebkitBackdropFilter: "blur(18px)",
+          border: "1px solid rgba(255,255,255,.075)",
+        }}
+      >
+        <div>
+          <p
+            style={{
+              margin: 0,
+              color: "#AF8C2D",
+              fontSize: "8px",
+              fontWeight: 900,
+              letterSpacing: ".12em",
+              textTransform: "uppercase",
+            }}
+          >
+            Orbital atlas
+          </p>
+          <p
+            style={{
+              margin: "3px 0 0",
+              color: "#F4F4F4",
+              fontSize: "12px",
+              fontWeight: 800,
+            }}
+          >
+            {unlockedCount}/{PLANETS.length} worlds mapped
+          </p>
+          <p
+            style={{
+              margin: "3px 0 0",
+              color: "#747A84",
+              fontSize: "9px",
+            }}
+          >
+            {nextPlanet
+              ? `Next discovery · ${nextPlanet}`
+              : "System complete · keep building your universe"}
+          </p>
+        </div>
 
-                {/* Planet */}
-                <g
-                  transform={`translate(${position.x}, ${position.y})`}
-                  onMouseEnter={() => setHoveredPlanet(i)}
-                  onMouseLeave={() => setHoveredPlanet(null)}
-                >
-                  {/* Planet shadow */}
-                  <motion.circle
-                    cx="0.5"
-                    cy="0.5"
-                    r={planet.size + 1}
-                    fill="#000000"
-                    opacity="0.15"
-                    style={{ filter: 'blur(3px)' }}
-                    animate={{ scale: depthScale }}
-                    transition={{ duration: 0.3, ease: "easeOut" }}
-                  />
+        <motion.div
+          animate={{ rotate: [0, 4, -4, 0] }}
+          transition={{ duration: 5, repeat: Infinity }}
+          style={{
+            width: 34,
+            height: 34,
+            borderRadius: 12,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            color: "#C6A03C",
+            background: "rgba(198,160,60,.07)",
+          }}
+        >
+          <Sparkles size={16} />
+        </motion.div>
+      </div>
 
-                  {/* Planet body */}
-                  <motion.circle
-                    r={planet.size}
-                    fill={`url(#planet-gradient-${i})`}
-                    animate={{
-                      scale: isActive ? [depthScale, depthScale * 1.05, depthScale] : depthScale,
-                    }}
-                    transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
-                    style={{
-                      filter: `drop-shadow(0 0 ${4 + i}px ${planet.color})`,
-                      cursor: 'pointer',
-                    }}
-                    whileHover={{ scale: depthScale * 1.2 }}
-                  />
-
-                  {/* Specular highlight */}
-                  <motion.circle
-                    cx={-planet.size * 0.3}
-                    cy={-planet.size * 0.3}
-                    r={planet.size * 0.35}
-                    fill="#FFFFFF"
-                    opacity="0.6"
-                    style={{ filter: 'blur(1px)' }}
-                    animate={{ scale: depthScale }}
-                    transition={{ duration: 0.3, ease: "easeOut" }}
-                  />
-
-                  {/* Ring for outer planets */}
-                  {planet.hasRing && (
-                    <motion.ellipse
-                      cx="0"
-                      cy="0"
-                      rx={planet.size * 1.6}
-                      ry={planet.size * 0.5}
-                      fill="none"
-                      stroke="#FFD500"
-                      strokeWidth="0.8"
-                      opacity="0.4"
-                      style={{ 
-                        filter: 'blur(0.5px)',
-                        transform: 'rotate(15deg)',
-                      }}
-                      animate={{ scale: depthScale }}
-                      transition={{ duration: 0.3, ease: "easeOut" }}
-                    />
-                  )}
-
-                  {/* Hover tooltip */}
-                  {hoveredPlanet === i && (
-                    <motion.g
-                      initial={{ opacity: 0, x: -5 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      transition={{ duration: 0.2 }}
-                    >
-                      <text
-                        x={planet.size + 12}
-                        y="5"
-                        textAnchor="start"
-                        fill="#000000"
-                        fontSize="10"
-                        fontWeight="600"
-                        fontFamily="Inter, -apple-system, sans-serif"
-                      >
-                        {planet.name} • Session {i + 1}
-                      </text>
-                    </motion.g>
-                  )}
-                </g>
-              </g>
-            );
-          })}
-        </g>
-      </svg>
-    </div>
+      {/* timer progress */}
+      <div
+        style={{
+          position: "absolute",
+          left: "16px",
+          right: "16px",
+          top: "14px",
+          height: 3,
+          borderRadius: 999,
+          background: "rgba(255,255,255,.05)",
+          overflow: "hidden",
+          zIndex: 70,
+        }}
+      >
+        <motion.div
+          animate={{ width: `${progressPct}%` }}
+          transition={{ duration: 0.3 }}
+          style={{
+            height: "100%",
+            borderRadius: 999,
+            background:
+              "linear-gradient(90deg,rgba(188,145,44,.62),rgba(226,194,99,.90))",
+          }}
+        />
+      </div>
+    </motion.div>
   );
 }

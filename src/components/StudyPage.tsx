@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, type PointerEvent } from "react";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
 import { Progress } from "./ui/progress";
@@ -30,7 +30,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Label } from "./ui/label";
 import { questionBank, type Question } from "../data/questionBank";
 import { getCurrentAndLastWeekTopicIds, getPastWeeksForQuizBank, type WeeklyLesson, getCurrentWeekLessons, getLastWeekLessons } from "../data/weeklyLessons";
-import { askMarquisAI } from "../services/ai";
 
 type TabType = "focus" | "quizzes" | "memory" | "revision";
 type QuestionType = "multiple-choice" | "short-answer";
@@ -93,18 +92,45 @@ function isClassroomSubmitted(work: ClassroomWorkItem): boolean {
 
 export function StudyPage() {
   const { currentStudent } = useData();
-  const { googleProviderToken } = useAuth();
+  const {
+    googleProviderToken,
+    googleIdentityLinked,
+    isConnectingGoogle,
+    connectGoogleClassroom,
+  } = useAuth();
 
   // Google Classroom State
   const [googleCourses, setGoogleCourses] = useState<GoogleClassroomCourse[]>([]);
   const [googleCoursework, setGoogleCoursework] = useState<ClassroomWorkItem[]>([]);
   const [classroomLoading, setClassroomLoading] = useState(false);
   const [classroomError, setClassroomError] = useState<string | null>(null);
+  const [googleConnectError, setGoogleConnectError] = useState<string | null>(null);
   const [classroomCourseFilter, setClassroomCourseFilter] = useState("all");
   const [classroomSearch, setClassroomSearch] = useState("");
   const [focusAssignment, setFocusAssignment] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<TabType>("focus");
   const [showInsights, setShowInsights] = useState(false);
+  const [showClassroomDetails, setShowClassroomDetails] = useState(false);
+  const [lavaPointer, setLavaPointer] = useState({
+    x: 0,
+    y: 0,
+    active: false,
+  });
+
+  const handleStudyPointerMove = (
+    event: PointerEvent<HTMLDivElement>
+  ) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    setLavaPointer({
+      x: (event.clientX - rect.left) / rect.width - 0.5,
+      y: (event.clientY - rect.top) / rect.height - 0.5,
+      active: true,
+    });
+  };
+
+  const resetStudyPointer = () => {
+    setLavaPointer({ x: 0, y: 0, active: false });
+  };
   
   // Celebration State
   const [showCelebration, setShowCelebration] = useState(false);
@@ -150,7 +176,30 @@ export function StudyPage() {
     { id: "revision" as TabType, label: "Revision", icon: BookOpen },
   ];
 
-  const weakAreas: Array<{ topic: string; difficulty: DifficultyLevel; color: string }> = [];
+  const focusTopicColors = ["#FFD84D", "#A7F3D0", "#BFDBFE", "#FBCFE8"];
+
+  const weakAreas: Array<{
+    topic: string;
+    difficulty: DifficultyLevel;
+    color: string;
+  }> = Array.from(
+    new Map(
+      googleCoursework
+        .filter((work) => !isClassroomSubmitted(work))
+        .map((work) => [
+          `${work.courseName}:${work.title}`,
+          {
+            topic: work.title,
+            difficulty: "medium" as DifficultyLevel,
+          },
+        ])
+    ).values()
+  )
+    .slice(0, 4)
+    .map((area, index) => ({
+      ...area,
+      color: focusTopicColors[index % focusTopicColors.length],
+    }));
 
   // Trigger celebration helper
   const triggerCelebration = (message: string, type: "confetti" | "stars" | "fireworks" = "confetti") => {
@@ -248,25 +297,7 @@ export function StudyPage() {
 
     void loadGoogleClassroom();
   }, [googleProviderToken]);
-
-useEffect(() => {
-  async function test() {
-    const response = await askMarquisAI({
-      mode: "quiz",
-      assignmentTitle: "Photosynthesis",
-      assignmentDescription: "Learn photosynthesis",
-      courseName: "Biology"
-    });
-
-    console.log(response);
-  }
-
-  test();
-}, []);
-
-
-
-  // Pomodoro Timer Effect
+// Pomodoro Timer Effect
   useEffect(() => {
     let interval: ReturnType<typeof setInterval>;
 
@@ -430,65 +461,95 @@ useEffect(() => {
 
   // Quiz Functions
   const generateAdaptiveQuiz = () => {
-    // Get current subject (Math for now, would be dynamic in production)
     const subject = "Mathematics";
-    
-    // Get current and last week lesson info
-    const currentWeek = getCurrentWeekLessons(subject);
-    const lastWeek = getLastWeekLessons(subject);
-    
-    // Get topic IDs for current + last week
     const topicIds = getCurrentAndLastWeekTopicIds(subject);
-    
-    // Filter questions from question bank matching these topics
-    const relevantQuestions = questionBank.filter(q => 
+
+    let relevantQuestions = questionBank.filter((q) =>
       topicIds.includes(q.curriculumTopicId)
     );
-    
-    // Select 15 questions with a mix of difficulties
-    // Target distribution: 5 easy, 7 medium, 3 hard
-    const easyQuestions = relevantQuestions.filter(q => q.difficulty === "easy");
-    const mediumQuestions = relevantQuestions.filter(q => q.difficulty === "medium");
-    const hardQuestions = relevantQuestions.filter(q => q.difficulty === "hard");
-    
-    // Shuffle and select questions
-    const shuffleArray = (arr: any[]) => arr.sort(() => Math.random() - 0.5);
-    
-    const selectedQuestions: Question[] = [
-      ...shuffleArray([...easyQuestions]).slice(0, 5),
-      ...shuffleArray([...mediumQuestions]).slice(0, 7),
-      ...shuffleArray([...hardQuestions]).slice(0, 3)
-    ];
-    
-    // If we don't have enough questions, fill with what we have
-    const finalQuestions = shuffleArray(selectedQuestions).slice(0, 15);
-    
-    // Convert to QuizQuestion format
-    const adaptiveQuestions: QuizQuestion[] = finalQuestions.map((q, index) => ({
-      id: Date.now() + index,
-      question: q.question,
-      type: q.type as QuestionType,
-      difficulty: q.difficulty,
-      correctAnswer: q.correctAnswer,
-      options: q.options,
-      userAnswer: "",
-      wasWrong: false
-    }));
 
-    const weekTopics = [
-      currentWeek?.topics.join(", "),
-      lastWeek?.topics.join(", ")
-    ].filter(Boolean).join(" & ");
+    // If the weekly topic mapping does not match anything, use the local
+    // question bank instead of creating a broken zero-question quiz.
+    if (relevantQuestions.length === 0) {
+      relevantQuestions = [...questionBank];
+    }
+
+    if (relevantQuestions.length === 0) {
+      toast.error(
+        "No quiz questions are available yet. Add questions to the question bank first."
+      );
+      return;
+    }
+
+    const shuffleArray = <T,>(items: T[]): T[] =>
+      [...items].sort(() => Math.random() - 0.5);
+
+    const easyQuestions = shuffleArray(
+      relevantQuestions.filter((q) => q.difficulty === "easy")
+    );
+    const mediumQuestions = shuffleArray(
+      relevantQuestions.filter((q) => q.difficulty === "medium")
+    );
+    const hardQuestions = shuffleArray(
+      relevantQuestions.filter((q) => q.difficulty === "hard")
+    );
+
+    const selectedQuestions: Question[] = [
+      ...easyQuestions.slice(0, 5),
+      ...mediumQuestions.slice(0, 7),
+      ...hardQuestions.slice(0, 3),
+    ];
+
+    const selectedSet = new Set(selectedQuestions);
+    const remainingQuestions = shuffleArray(
+      relevantQuestions.filter((q) => !selectedSet.has(q))
+    );
+
+    const finalQuestions = [
+      ...selectedQuestions,
+      ...remainingQuestions,
+    ].slice(0, 15);
+
+    if (finalQuestions.length === 0) {
+      toast.error("No suitable quiz questions were found.");
+      return;
+    }
+
+    const adaptiveQuestions: QuizQuestion[] = finalQuestions.map(
+      (q, index) => ({
+        id: Date.now() + index,
+        question: q.question,
+        type: q.type as QuestionType,
+        difficulty: q.difficulty,
+        correctAnswer: q.correctAnswer,
+        options: q.options,
+        userAnswer: "",
+        wasWrong: false,
+      })
+    );
+
+    const classroomTopics = googleCoursework
+      .filter((work) => !isClassroomSubmitted(work))
+      .slice(0, 3)
+      .map((work) => work.title);
+
+    const topicLabel =
+      classroomTopics.length > 0
+        ? classroomTopics.join(", ")
+        : "Weekly Practice";
 
     const adaptiveQuiz: Quiz = {
       id: Date.now(),
-      topic: `Weekly Review: ${weekTopics}`,
+      topic: `Weekly Review: ${topicLabel}`,
       questions: adaptiveQuestions,
-      isAdaptive: true
+      isAdaptive: true,
     };
 
     startQuiz(adaptiveQuiz);
-    toast.success(`Generated ${adaptiveQuestions.length}-question adaptive quiz!`);
+
+    toast.success(
+      `Created a ${adaptiveQuestions.length}-question practice quiz.`
+    );
   };
 
   const generateQuizFromWeek = (weekLesson: WeeklyLesson) => {
@@ -512,7 +573,15 @@ useEffect(() => {
     
     const finalQuestions = shuffleArray(selectedQuestions).slice(0, 15);
     
-    // Convert to QuizQuestion format
+    
+    if (finalQuestions.length === 0) {
+      toast.error(
+        `No questions are available for Week ${weekLesson.weekNumber} yet.`
+      );
+      return;
+    }
+
+// Convert to QuizQuestion format
     const quizQuestions: QuizQuestion[] = finalQuestions.map((q, index) => ({
       id: Date.now() + index,
       question: q.question,
@@ -539,9 +608,17 @@ useEffect(() => {
   };
 
   const startQuiz = (quiz: Quiz) => {
+    if (!quiz.questions || quiz.questions.length === 0) {
+      toast.error("This quiz has no questions, so it was not started.");
+      return;
+    }
+
     setActiveQuiz({
       ...quiz,
-      questions: quiz.questions.map(q => ({ ...q, userAnswer: "" }))
+      questions: quiz.questions.map((q) => ({
+        ...q,
+        userAnswer: "",
+      })),
     });
     setCurrentQuestionIndex(0);
     setShowResults(false);
@@ -575,14 +652,26 @@ useEffect(() => {
   };
 
   const calculateScore = () => {
-    if (!activeQuiz) return { score: 0, total: 0, percentage: 0 };
+    if (!activeQuiz || activeQuiz.questions.length === 0) {
+      return {
+        score: 0,
+        total: 0,
+        percentage: 0,
+      };
+    }
+
     const correct = activeQuiz.questions.filter(
-      q => q.userAnswer.toLowerCase().trim() === q.correctAnswer.toLowerCase().trim()
+      (q) =>
+        q.userAnswer.toLowerCase().trim() ===
+        q.correctAnswer.toLowerCase().trim()
     ).length;
+
     return {
       score: correct,
       total: activeQuiz.questions.length,
-      percentage: Math.round((correct / activeQuiz.questions.length) * 100)
+      percentage: Math.round(
+        (correct / activeQuiz.questions.length) * 100
+      ),
     };
   };
 
@@ -737,9 +826,18 @@ useEffect(() => {
 
   return (
     <div
-      className="min-h-screen pb-24 relative overflow-hidden"
+      className="min-h-screen pb-28 relative overflow-hidden"
+      onPointerMove={handleStudyPointerMove}
+      onPointerLeave={resetStudyPointer}
+      onPointerDown={handleStudyPointerMove}
+      onPointerUp={() =>
+        setLavaPointer((prev) => ({ ...prev, active: false }))
+      }
       style={{
-        background: "linear-gradient(to bottom, #FFF8E5 0%, #FFFDF7 100%)"
+        background:
+          "linear-gradient(180deg, #F8F6F1 0%, #FCFBF8 48%, #F1EEE7 100%)",
+        color: "#111111",
+        touchAction: "pan-y",
       }}
     >
       {/* Celebration Overlay */}
@@ -750,52 +848,296 @@ useEffect(() => {
         onComplete={() => setShowCelebration(false)}
       />
 
-      {/* Subtle Watermark */}
+      {/* Interactive Marquis lava background */}
       <div
-        className="absolute inset-0 pointer-events-none opacity-[0.03]"
-        style={{
-          backgroundImage: `url("data:image/svg+xml,%3Csvg width='100' height='100' xmlns='http://www.w3.org/2000/svg'%3E%3Ctext x='10' y='50' font-size='40' fill='%23000' opacity='0.1'%3E⭐%3C/text%3E%3C/svg%3E")`,
-          backgroundRepeat: "repeat",
-          backgroundSize: "150px 150px"
-        }}
-      />
-
-      <div className="max-w-2xl mx-auto px-6 pt-8 relative">
-        {/* Page Header */}
+        className="absolute inset-0 pointer-events-none overflow-hidden"
+        style={{ zIndex: 0 }}
+      >
         <motion.div
+          animate={{
+            x: lavaPointer.active ? lavaPointer.x * 72 : [0, 34, -18, 0],
+            y: lavaPointer.active ? lavaPointer.y * 56 : [0, 24, -14, 0],
+            scale: lavaPointer.active ? 1.22 : [1, 1.1, 0.97, 1],
+          }}
+          transition={{
+            duration: lavaPointer.active ? 0.38 : 9,
+            repeat: lavaPointer.active ? 0 : Infinity,
+            ease: "easeInOut",
+          }}
+          style={{
+            position: "absolute",
+            width: "310px",
+            height: "310px",
+            top: "-90px",
+            right: "-125px",
+            borderRadius:
+              "46% 54% 58% 42% / 48% 42% 58% 52%",
+            background:
+              "radial-gradient(circle at 38% 34%, rgba(255,213,0,0.40), rgba(255,213,0,0.10) 58%, transparent 75%)",
+            filter: "blur(17px)",
+          }}
+        />
+
+        <motion.div
+          animate={{
+            x: lavaPointer.active ? lavaPointer.x * -54 : [0, -28, 18, 0],
+            y: lavaPointer.active ? lavaPointer.y * -42 : [0, -18, 26, 0],
+            scale: lavaPointer.active ? 1.15 : [1, 0.96, 1.07, 1],
+          }}
+          transition={{
+            duration: lavaPointer.active ? 0.42 : 11,
+            repeat: lavaPointer.active ? 0 : Infinity,
+            ease: "easeInOut",
+          }}
+          style={{
+            position: "absolute",
+            width: "250px",
+            height: "250px",
+            top: "33%",
+            left: "-130px",
+            borderRadius:
+              "58% 42% 46% 54% / 42% 58% 44% 56%",
+            background:
+              "radial-gradient(circle at 52% 40%, rgba(18,18,18,0.12), rgba(135,135,135,0.06) 54%, transparent 72%)",
+            filter: "blur(18px)",
+          }}
+        />
+
+        <motion.div
+          animate={{
+            x: lavaPointer.active ? lavaPointer.x * 58 : [0, 20, -26, 0],
+            y: lavaPointer.active ? lavaPointer.y * 44 : [0, 30, 8, 0],
+            scale: lavaPointer.active ? 1.18 : [1, 1.06, 0.97, 1],
+          }}
+          transition={{
+            duration: lavaPointer.active ? 0.4 : 10,
+            repeat: lavaPointer.active ? 0 : Infinity,
+            ease: "easeInOut",
+          }}
+          style={{
+            position: "absolute",
+            width: "240px",
+            height: "240px",
+            bottom: "100px",
+            right: "-105px",
+            borderRadius:
+              "43% 57% 51% 49% / 56% 44% 58% 42%",
+            background:
+              "radial-gradient(circle at 44% 38%, rgba(255,213,0,0.25), rgba(180,180,180,0.08) 58%, transparent 74%)",
+            filter: "blur(17px)",
+          }}
+        />
+      </div>
+
+      <div
+        className="mx-auto relative"
+        style={{
+          zIndex: 2,
+          width: "100%",
+          maxWidth: "760px",
+          padding: "24px 18px 0",
+          boxSizing: "border-box",
+        }}
+      >
+        {/* Compact Study Hero */}
+        <motion.section
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5 }}
-          className="mb-10"
+          transition={{ duration: 0.45 }}
+          style={{
+            position: "relative",
+            overflow: "hidden",
+            marginBottom: "18px",
+            padding: "24px 22px",
+            borderRadius: "30px",
+            textAlign: "center",
+            background:
+              "linear-gradient(145deg, rgba(255,255,255,0.80), rgba(255,255,255,0.56))",
+            backdropFilter: "blur(28px)",
+            WebkitBackdropFilter: "blur(28px)",
+            border: "1px solid rgba(255,255,255,0.94)",
+            boxShadow:
+              "0 18px 42px rgba(35,30,20,0.08), inset 0 1px 0 rgba(255,255,255,0.88)",
+          }}
         >
-          <h1
-            className="mb-2"
-            style={{
-              fontFamily: "Neurial Grotesk, sans-serif",
-              fontSize: "32px",
-              fontWeight: 700,
-              color: "#000000",
-              letterSpacing: "-0.02em",
-              marginTop: 0
+          <motion.div
+            aria-hidden="true"
+            animate={{
+              x: [0, 10, -8, 0],
+              y: [0, -8, 7, 0],
+              scale: [1, 1.05, 0.98, 1],
             }}
-          >
-            Study Tools
-          </h1>
-          <p
-            style={{
-              fontFamily: "Neurial Grotesk, sans-serif",
-              fontSize: "16px",
-              fontWeight: 400,
-              color: "#666666",
-              marginTop: 0
+            transition={{
+              duration: 8,
+              repeat: Infinity,
+              ease: "easeInOut",
             }}
-          >
-            Focus, practice, and master your subjects
-          </p>
-        </motion.div>
+            style={{
+              position: "absolute",
+              width: "145px",
+              height: "145px",
+              right: "-58px",
+              top: "-54px",
+              borderRadius:
+                "48% 52% 60% 40% / 44% 58% 42% 56%",
+              background:
+                "radial-gradient(circle at 40% 35%, rgba(255,213,0,0.30), rgba(255,213,0,0.06) 62%, transparent 76%)",
+              filter: "blur(7px)",
+            }}
+          />
 
-        {/* Google Classroom - live dashboard */}
-        <motion.div
+          <div className="relative z-10">
+            <p
+              style={{
+                margin: 0,
+                fontSize: "11px",
+                fontWeight: 900,
+                color: "#9A7D00",
+                letterSpacing: "0.08em",
+                textTransform: "uppercase",
+              }}
+            >
+              Study space
+            </p>
+
+            <h1
+              style={{
+                margin: "7px 0 0",
+                fontFamily: "Neurial Grotesk, sans-serif",
+                fontSize: "32px",
+                lineHeight: 1.05,
+                fontWeight: 800,
+                letterSpacing: "-0.04em",
+                color: "#111111",
+              }}
+            >
+              Study
+            </h1>
+
+            <p
+              style={{
+                margin: "9px auto 0",
+                maxWidth: "470px",
+                fontFamily: "Neurial Grotesk, sans-serif",
+                fontSize: "14px",
+                lineHeight: 1.5,
+                color: "#77716A",
+                fontWeight: 500,
+              }}
+            >
+              Focus, practise and review without the clutter.
+            </p>
+          </div>
+        </motion.section>
+
+        {/* Google Classroom - compact live summary */}
+        <motion.section
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.45, delay: 0.05 }}
+          style={{
+            marginBottom: "18px",
+            borderRadius: "26px",
+            background: "rgba(255,255,255,0.70)",
+            backdropFilter: "blur(24px)",
+            WebkitBackdropFilter: "blur(24px)",
+            border: "1px solid rgba(255,255,255,0.92)",
+            boxShadow:
+              "0 14px 34px rgba(35,30,20,0.07), inset 0 1px 0 rgba(255,255,255,0.86)",
+            overflow: "hidden",
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => setShowClassroomDetails((prev) => !prev)}
+            style={{
+              width: "100%",
+              border: 0,
+              background: "transparent",
+              padding: "18px",
+              cursor: "pointer",
+              textAlign: "left",
+            }}
+          >
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3 min-w-0">
+                <div
+                  className="flex items-center justify-center flex-shrink-0"
+                  style={{
+                    width: "44px",
+                    height: "44px",
+                    borderRadius: "14px",
+                    background:
+                      "linear-gradient(145deg, rgba(255,213,0,0.95), rgba(255,224,73,0.86))",
+                    boxShadow: "0 8px 18px rgba(255,213,0,0.20)",
+                  }}
+                >
+                  <BookOpen className="w-5 h-5" />
+                </div>
+
+                <div className="min-w-0">
+                  <p
+                    style={{
+                      margin: 0,
+                      fontSize: "16px",
+                      fontWeight: 800,
+                      color: "#111111",
+                    }}
+                  >
+                    Google Classroom
+                  </p>
+                  <p
+                    style={{
+                      margin: "3px 0 0",
+                      fontSize: "12px",
+                      lineHeight: 1.35,
+                      color: "#77716A",
+                    }}
+                  >
+                    {googleProviderToken
+                      ? `${classroomDueToday.length} due today · ${classroomDueThisWeek.length} this week`
+                      : "Connect your school account to bring coursework into Study"}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 flex-shrink-0">
+                {googleProviderToken && (
+                  <Badge
+                    style={{
+                      background: "rgba(255,248,220,0.82)",
+                      color: "#6B5400",
+                      border: "1px solid rgba(255,213,0,0.28)",
+                      fontSize: "11px",
+                    }}
+                  >
+                    {googleCourses.length} classes
+                  </Badge>
+                )}
+                {showClassroomDetails ? (
+                  <ChevronUp className="w-5 h-5" style={{ color: "#77716A" }} />
+                ) : (
+                  <ChevronDown className="w-5 h-5" style={{ color: "#77716A" }} />
+                )}
+              </div>
+            </div>
+          </button>
+
+          <AnimatePresence initial={false}>
+            {showClassroomDetails && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={{ duration: 0.32, ease: "easeInOut" }}
+                style={{ overflow: "hidden" }}
+              >
+                <div
+                  style={{
+                    padding: "0 14px 14px",
+                  }}
+                >
+<motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.05 }}
@@ -860,22 +1202,111 @@ useEffect(() => {
             {!googleProviderToken && (
               <div
                 style={{
-                  padding: "16px",
-                  borderRadius: "14px",
+                  padding: "18px",
+                  borderRadius: "16px",
                   background: "#FFF8E5",
-                  border: "1px solid #FFD84D55",
+                  border: "1px solid #FFD84D66",
                 }}
               >
-                <p
-                  style={{
-                    fontFamily: "Neurial Grotesk, sans-serif",
-                    fontSize: "14px",
-                    color: "#555555",
-                    margin: 0,
-                  }}
-                >
-                  Sign in with Google to connect your Google Classroom.
-                </p>
+                <div className="flex items-start gap-3">
+                  <div
+                    className="flex items-center justify-center flex-shrink-0"
+                    style={{
+                      width: "40px",
+                      height: "40px",
+                      borderRadius: "12px",
+                      background: "#FFD500",
+                    }}
+                  >
+                    <BookOpen
+                      className="w-5 h-5"
+                      style={{ color: "#000000" }}
+                    />
+                  </div>
+
+                  <div className="flex-1 min-w-0">
+                    <p
+                      style={{
+                        fontFamily: "Neurial Grotesk, sans-serif",
+                        fontSize: "15px",
+                        fontWeight: 700,
+                        color: "#111111",
+                        margin: 0,
+                      }}
+                    >
+                      {googleIdentityLinked
+                        ? "Reconnect Google Classroom"
+                        : "Connect Google Classroom"}
+                    </p>
+
+                    <p
+                      style={{
+                        fontFamily: "Neurial Grotesk, sans-serif",
+                        fontSize: "13px",
+                        lineHeight: 1.5,
+                        color: "#666666",
+                        margin: "5px 0 14px",
+                      }}
+                    >
+                      {googleIdentityLinked
+                        ? "Your Google account is linked to Marquis. Re-authorise Classroom to load your current classes and assignments."
+                        : "Use your school Google account once to give Marquis permission to read your classes, homework and submission status."}
+                    </p>
+
+                    <Button
+                      type="button"
+                      disabled={isConnectingGoogle}
+                      onClick={async () => {
+                        setGoogleConnectError(null);
+
+                        try {
+                          await connectGoogleClassroom();
+                        } catch (error) {
+                          setGoogleConnectError(
+                            error instanceof Error
+                              ? error.message
+                              : "Unable to connect Google Classroom."
+                          );
+                        }
+                      }}
+                      className="border-0"
+                      style={{
+                        minHeight: "44px",
+                        borderRadius: "12px",
+                        padding: "0 18px",
+                        background:
+                          "linear-gradient(135deg, #111111 0%, #272727 100%)",
+                        color: "#FFFFFF",
+                        fontFamily: "Neurial Grotesk, sans-serif",
+                        fontSize: "14px",
+                        fontWeight: 700,
+                        cursor: isConnectingGoogle
+                          ? "wait"
+                          : "pointer",
+                        opacity: isConnectingGoogle ? 0.7 : 1,
+                      }}
+                    >
+                      {isConnectingGoogle
+                        ? "Connecting..."
+                        : googleIdentityLinked
+                          ? "Authorise Classroom"
+                          : "Connect Google Classroom"}
+                    </Button>
+
+                    {googleConnectError && (
+                      <p
+                        style={{
+                          fontFamily: "Neurial Grotesk, sans-serif",
+                          fontSize: "12px",
+                          color: "#B91C1C",
+                          margin: "10px 0 0",
+                        }}
+                      >
+                        {googleConnectError}
+                      </p>
+                    )}
+                  </div>
+                </div>
               </div>
             )}
 
@@ -1353,48 +1784,81 @@ useEffect(() => {
           </Card>
         </motion.div>
 
-        {/* 4-Tab Quick Action Row */}
+
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </motion.section>
+
+        {/* Centered glass tool navigation */}
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.1 }}
-          className="flex gap-3 mb-8 overflow-x-auto pb-2"
+          transition={{ duration: 0.45, delay: 0.08 }}
           style={{
-            scrollbarWidth: "none",
-            msOverflowStyle: "none"
+            display: "grid",
+            gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+            gap: "6px",
+            marginBottom: "18px",
+            padding: "6px",
+            borderRadius: "22px",
+            background: "rgba(255,255,255,0.64)",
+            backdropFilter: "blur(22px)",
+            WebkitBackdropFilter: "blur(22px)",
+            border: "1px solid rgba(255,255,255,0.92)",
+            boxShadow: "0 12px 30px rgba(30,26,18,0.07)",
           }}
         >
           {tabs.map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
+
             return (
-              <button
+              <motion.button
                 key={tab.id}
+                type="button"
                 onClick={() => setActiveTab(tab.id)}
-                className="flex items-center gap-2 px-5 py-3 rounded-full transition-all flex-shrink-0"
+                whileHover={{ y: -2 }}
+                whileTap={{ scale: 0.97 }}
                 style={{
+                  minWidth: 0,
+                  minHeight: "58px",
+                  border: "1px solid",
+                  borderColor: isActive
+                    ? "rgba(255,213,0,0.55)"
+                    : "transparent",
+                  borderRadius: "17px",
                   background: isActive
-                    ? "linear-gradient(135deg, #FFD84D 0%, #FECF38 100%)"
-                    : "#FFFFFF",
-                  border: isActive ? "none" : "1px solid #E6E6E6",
-                  color: isActive ? "#000000" : "#666666",
-                  fontFamily: "Neurial Grotesk, sans-serif",
-                  fontSize: "15px",
-                  fontWeight: isActive ? 700 : 600,
+                    ? "linear-gradient(145deg, rgba(255,213,0,0.96), rgba(255,225,80,0.90))"
+                    : "transparent",
+                  color: isActive ? "#111111" : "#77716A",
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "4px",
                   cursor: "pointer",
                   boxShadow: isActive
-                    ? "0px 6px 20px rgba(254, 207, 56, 0.3)"
-                    : "0px 2px 8px rgba(0,0,0,0.04)"
+                    ? "0 8px 18px rgba(255,213,0,0.18)"
+                    : "none",
                 }}
               >
-                <Icon
-                  className="w-5 h-5"
+                <Icon className="w-5 h-5" strokeWidth={isActive ? 2.5 : 2} />
+                <span
                   style={{
-                    strokeWidth: isActive ? 2.5 : 2
+                    maxWidth: "100%",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                    fontFamily: "Neurial Grotesk, sans-serif",
+                    fontSize: "11px",
+                    fontWeight: isActive ? 800 : 700,
                   }}
-                />
-                {tab.label}
-              </button>
+                >
+                  {tab.id === "quizzes" ? "Practice" : tab.label}
+                </span>
+              </motion.button>
             );
           })}
         </motion.div>
@@ -1409,12 +1873,20 @@ useEffect(() => {
             transition={{ duration: 0.4 }}
           >
             <Card
-              className="border-0 mb-8"
+              className="border-0 mb-6"
               style={{
-                background: "#FFFFFF",
-                borderRadius: "24px",
-                padding: "32px",
-                boxShadow: "0px 8px 32px rgba(0,0,0,0.06)"
+                width: "100%",
+                boxSizing: "border-box",
+                overflow: "hidden",
+                background:
+                  "linear-gradient(145deg, rgba(255,255,255,0.78), rgba(255,255,255,0.60))",
+                backdropFilter: "blur(26px)",
+                WebkitBackdropFilter: "blur(26px)",
+                border: "1px solid rgba(255,255,255,0.94)",
+                borderRadius: "28px",
+                padding: "clamp(20px, 4vw, 28px)",
+                boxShadow:
+                  "0 16px 38px rgba(30,26,18,0.08), inset 0 1px 0 rgba(255,255,255,0.88)"
               }}
             >
               {/* FOCUS TAB - Pomodoro Timer */}
@@ -1461,7 +1933,7 @@ useEffect(() => {
                           background: "#FFFFFF",
                           borderRadius: "24px",
                           maxWidth: "400px",
-                          padding: "32px"
+                          padding: "24px"
                         }}
                       >
                         <DialogHeader>
@@ -1730,7 +2202,17 @@ useEffect(() => {
                   )}
 
                   {/* Orbital Solar System */}
-                  <div className="mb-6">
+                  <div
+                    className="mb-5 mx-auto"
+                    style={{
+                      width: "100%",
+                      maxWidth: "360px",
+                      overflow: "hidden",
+                      borderRadius: "24px",
+                      background:
+                        "radial-gradient(circle at 50% 70%, rgba(255,213,0,0.14), transparent 66%)",
+                    }}
+                  >
                     <OrbitalTimer
                       sessionsCompleted={sessionsCompleted}
                       isActive={isRunning && timerMode === "work"}
@@ -1744,7 +2226,7 @@ useEffect(() => {
                     className="mb-8"
                     style={{
                       fontFamily: "Neurial Grotesk, sans-serif",
-                      fontSize: "56px",
+                      fontSize: "46px",
                       fontWeight: 700,
                       color: "#000000",
                       letterSpacing: "-0.02em"
@@ -1754,7 +2236,7 @@ useEffect(() => {
                   </div>
 
                   {/* Timer Controls */}
-                  <div className="flex gap-3 justify-center mb-8">
+                  <div className="flex gap-3 justify-center flex-wrap mb-7">
                     <Button
                       onClick={handleTimerToggle}
                       className="border-0"
@@ -1808,7 +2290,7 @@ useEffect(() => {
                   <Separator className="my-6" />
 
                   {/* Session Stats */}
-                  <div className="flex justify-around">
+                  <div className="grid grid-cols-2 gap-3">
                     <div className="text-center">
                       <p
                         style={{
@@ -1874,7 +2356,7 @@ useEffect(() => {
                           marginTop: 0
                         }}
                       >
-                        Adaptive Quiz Generator
+                        Practice
                       </h3>
                       <p
                         className="mb-6"
@@ -1885,7 +2367,7 @@ useEffect(() => {
                           marginTop: 0
                         }}
                       >
-                        Practice questions targeting your weak areas
+                        Short, targeted practice built around what matters now.
                       </p>
 
                       {/* Weak Areas */}
@@ -1901,20 +2383,39 @@ useEffect(() => {
                             letterSpacing: "0.5px"
                           }}
                         >
-                          Focus Topics
+                          Recommended from your current workload
                         </p>
-                        <div className="flex flex-wrap gap-2">
+                        <div className="grid gap-2">
+                          {weakAreas.length === 0 && (
+                            <span
+                              className="px-4 py-3 rounded-2xl"
+                              style={{
+                                background: "rgba(255,255,255,0.58)",
+                                border: "1px solid rgba(230,230,230,0.80)",
+                                color: "#777777",
+                                fontFamily: "Neurial Grotesk, sans-serif",
+                                fontSize: "13px",
+                                fontWeight: 600,
+                                textAlign: "left",
+                              }}
+                            >
+                              Connect Google Classroom to show current focus topics
+                            </span>
+                          )}
+
                           {weakAreas.map((area) => (
                             <span
                               key={area.topic}
-                              className="px-4 py-2 rounded-full"
+                              className="px-4 py-3 rounded-2xl"
                               style={{
-                                background: `${area.color}22`,
-                                border: `1px solid ${area.color}44`,
-                                color: "#000000",
+                                background: "rgba(255,255,255,0.62)",
+                                border: `1px solid ${area.color}55`,
+                                color: "#111111",
                                 fontFamily: "Neurial Grotesk, sans-serif",
-                                fontSize: "14px",
-                                fontWeight: 600
+                                fontSize: "13px",
+                                lineHeight: 1.35,
+                                fontWeight: 700,
+                                textAlign: "left",
                               }}
                             >
                               {area.topic}
@@ -1939,7 +2440,7 @@ useEffect(() => {
                           }}
                         >
                           <Sparkles className="w-5 h-5 mr-2" />
-                          Generate Weekly Quiz (15 Questions)
+                          Build weekly practice quiz
                         </Button>
 
                         <Dialog open={showQuizBank} onOpenChange={setShowQuizBank}>
@@ -2714,10 +3215,12 @@ useEffect(() => {
             onClick={() => setShowInsights(!showInsights)}
             className="w-full flex items-center justify-between p-5 rounded-2xl transition-all"
             style={{
-              background: "#FFFFFF",
-              border: "1px solid #E6E6E6",
+              background: "rgba(255,255,255,0.66)",
+              backdropFilter: "blur(22px)",
+              WebkitBackdropFilter: "blur(22px)",
+              border: "1px solid rgba(255,255,255,0.92)",
               cursor: "pointer",
-              boxShadow: "0px 4px 16px rgba(0,0,0,0.04)"
+              boxShadow: "0 12px 28px rgba(30,26,18,0.06)"
             }}
           >
             <div className="flex items-center gap-3">
@@ -2730,7 +3233,7 @@ useEffect(() => {
                   color: "#000000"
                 }}
               >
-                Insights & Recommendations
+                Study coach
               </span>
             </div>
             {showInsights ? (

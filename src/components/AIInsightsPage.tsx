@@ -1,23 +1,23 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  AlertCircle,
   ArrowLeft,
+  ArrowUpRight,
   BookOpen,
   Calendar,
   CheckCircle2,
+  ChevronRight,
   Clock,
+  Flame,
+  GraduationCap,
+  Lightbulb,
   Sparkles,
+  Star,
   Target,
-  TrendingUp,
+  TimerReset,
 } from "lucide-react";
 import { motion } from "motion/react";
 
 import { AIStudyPlanPage } from "./AIStudyPlanPage";
-import { Badge } from "./ui/badge";
-import { Button } from "./ui/button";
-import { Card } from "./ui/card";
-import { Progress } from "./ui/progress";
-
 import { useAuth } from "../contexts/AuthContext";
 import { supabase } from "../lib/supabase";
 
@@ -72,21 +72,6 @@ function isSubmitted(work: ClassroomWorkItem) {
   );
 }
 
-function getPercent(work: ClassroomWorkItem) {
-  const grade = work.submission?.assignedGrade;
-  const maxPoints = work.maxPoints;
-
-  if (
-    typeof grade !== "number" ||
-    typeof maxPoints !== "number" ||
-    maxPoints <= 0
-  ) {
-    return null;
-  }
-
-  return (grade / maxPoints) * 100;
-}
-
 function daysUntil(date: Date) {
   const today = new Date();
   const start = new Date(
@@ -123,7 +108,11 @@ export function AIInsightsPage({
 
   useEffect(() => {
     const load = async () => {
-      if (!googleProviderToken) return;
+      if (!googleProviderToken) {
+        setCourses([]);
+        setWork([]);
+        return;
+      }
 
       setLoading(true);
       setError(null);
@@ -242,9 +231,6 @@ export function AIInsightsPage({
         if (items.length === 0) return null;
 
         const done = items.filter(isSubmitted).length;
-        const percentages = items
-          .map(getPercent)
-          .filter((value): value is number => value !== null);
 
         return {
           id: course.id,
@@ -253,11 +239,6 @@ export function AIInsightsPage({
             items.length > 0
               ? (done / items.length) * 100
               : 0,
-          average:
-            percentages.length > 0
-              ? percentages.reduce((a, b) => a + b, 0) /
-                percentages.length
-              : null,
           pending: items.length - done,
         };
       })
@@ -268,18 +249,9 @@ export function AIInsightsPage({
           id: string;
           name: string;
           completion: number;
-          average: number | null;
           pending: number;
         } => value !== null
       );
-
-    const weakest = courseStats
-      .filter((course) => course.average !== null)
-      .slice()
-      .sort(
-        (a, b) =>
-          (a.average ?? 100) - (b.average ?? 100)
-      )[0];
 
     const busiest = courseStats
       .slice()
@@ -298,12 +270,190 @@ export function AIInsightsPage({
       overdue,
       upcoming,
       dueSevenDays,
-      courseStats,
-      weakest,
       busiest,
       upcomingSchoolAssessments,
     };
   }, [courses, work, schoolAssessments]);
+
+  const focusSessionsCompleted = (() => {
+    if (typeof window === "undefined") return 0;
+
+    const value = Number(
+      window.localStorage.getItem(
+        "marquis_focus_sessions_completed"
+      ) ?? "0"
+    );
+
+    return Number.isFinite(value)
+      ? Math.max(0, value)
+      : 0;
+  })();
+
+  const quizQuestionsCorrect = (() => {
+    if (typeof window === "undefined") return 0;
+
+    const value = Number(
+      window.localStorage.getItem(
+        "marquis_quiz_questions_correct"
+      ) ?? "0"
+    );
+
+    return Number.isFinite(value)
+      ? Math.max(0, value)
+      : 0;
+  })();
+
+  const completedClassroom = work.filter(isSubmitted).length;
+
+  const prioritySchoolAssessment =
+    insights.upcomingSchoolAssessments
+      .map((assessment) => {
+        const dueIn = Math.max(
+          0,
+          daysUntil(new Date(assessment.due_at))
+        );
+
+        const weighting = assessment.weighting ?? 10;
+        const difficulty = assessment.difficulty ?? 3;
+        const confidence = assessment.confidence ?? 3;
+
+        const score =
+          Math.max(0, 28 - dueIn * 2) +
+          weighting * 0.65 +
+          difficulty * 4 +
+          (6 - confidence) * 5;
+
+        return {
+          assessment,
+          dueIn,
+          score,
+        };
+      })
+      .sort((a, b) => b.score - a.score)[0];
+
+  const coachFocus = prioritySchoolAssessment
+    ? {
+        eyebrow: "School assessment",
+        title: `Prioritise ${prioritySchoolAssessment.assessment.subject}`,
+        body: `${
+          prioritySchoolAssessment.assessment.title
+        } is due ${
+          prioritySchoolAssessment.dueIn === 0
+            ? "today"
+            : `in ${prioritySchoolAssessment.dueIn} ${
+                prioritySchoolAssessment.dueIn === 1
+                  ? "day"
+                  : "days"
+              }`
+        }${
+          prioritySchoolAssessment.assessment.weighting !== null
+            ? ` and is worth ${prioritySchoolAssessment.assessment.weighting}%`
+            : ""
+        }.${
+          prioritySchoolAssessment.assessment.confidence !== null
+            ? ` Your confidence is ${prioritySchoolAssessment.assessment.confidence}/5.`
+            : ""
+        }`,
+        action: "Build this into my week",
+      }
+    : insights.overdue.length > 0
+    ? {
+        eyebrow: "Workload reset",
+        title: "Reduce the overdue pile first",
+        body: `${insights.overdue.length} ${
+          insights.overdue.length === 1
+            ? "task is"
+            : "tasks are"
+        } already overdue. Start with one short catch-up block instead of trying to clear everything at once.`,
+        action: "Build a catch-up plan",
+      }
+    : insights.upcoming[0]
+    ? {
+        eyebrow: "Next deadline",
+        title: `Start ${insights.upcoming[0].courseName} early`,
+        body: `${insights.upcoming[0].title} is the closest visible Classroom deadline. One focused session now will make the rest of the week lighter.`,
+        action: "Plan my week",
+      }
+    : {
+        eyebrow: "Routine building",
+        title: "Use the quiet week to build consistency",
+        body: "There is no urgent deadline driving your plan right now. A few repeatable study blocks are more useful than one long catch-up session.",
+        action: "Build my routine",
+      };
+
+  const coachInsight =
+    prioritySchoolAssessment &&
+    prioritySchoolAssessment.assessment.confidence !== null &&
+    prioritySchoolAssessment.assessment.confidence <= 2
+      ? `You rated your confidence low for ${prioritySchoolAssessment.assessment.subject}. Split preparation across shorter sessions and finish with practice questions rather than rereading notes.`
+      : insights.busiest &&
+        insights.busiest.pending >= 8
+      ? `${insights.busiest.name} has the largest visible backlog. Give it one protected catch-up block this week, then return to your normal routine.`
+      : focusSessionsCompleted === 0
+      ? "Your routine has not recorded a completed focus session yet. Start with one 25-minute block; consistency matters more than duration at the beginning."
+      : quizQuestionsCorrect < 10
+      ? "Add a short retrieval-practice block after your next focus session. Quiz questions are a better check of learning than simply rereading material."
+      : "You are building useful study activity. Keep session lengths sustainable and use your quiz results to decide what needs another pass.";
+
+  const mergedNextSevenDays = [
+    ...insights.dueSevenDays.map((item) => ({
+      id: `classroom-${item.courseId}-${item.id}`,
+      source: "Classroom",
+      subject: item.courseName,
+      title: item.title,
+      dueAt: getDueDate(item)!,
+      weighting: null as number | null,
+    })),
+    ...insights.upcomingSchoolAssessments
+      .filter(
+        (assessment) =>
+          daysUntil(new Date(assessment.due_at)) <= 7
+      )
+      .map((assessment) => ({
+        id: `school-${assessment.id}`,
+        source: "School",
+        subject: assessment.subject,
+        title: assessment.title,
+        dueAt: new Date(assessment.due_at),
+        weighting: assessment.weighting,
+      })),
+  ]
+    .sort(
+      (a, b) =>
+        a.dueAt.getTime() - b.dueAt.getTime()
+    )
+    .slice(0, 5);
+
+  const suggestedBlocks = (() => {
+    const subject =
+      prioritySchoolAssessment?.assessment.subject ??
+      insights.upcoming[0]?.courseName ??
+      insights.busiest?.name ??
+      "your priority subject";
+
+    const confidence =
+      prioritySchoolAssessment?.assessment.confidence ?? 3;
+
+    const duration = confidence <= 2 ? 35 : 25;
+
+    return [
+      {
+        label: "Block 1",
+        title: subject,
+        detail: `${duration} min · understand + organise`,
+      },
+      {
+        label: "Block 2",
+        title: subject,
+        detail: `${duration} min · active recall / questions`,
+      },
+      {
+        label: "Reset",
+        title: "Short review",
+        detail: "15 min · check mistakes + plan next step",
+      },
+    ];
+  })();
 
   if (showStudyPlan) {
     return (
@@ -315,298 +465,764 @@ export function AIInsightsPage({
   }
 
   return (
-    <div className="min-h-screen pb-24 px-6 pt-6"
+    <div
+      className="min-h-screen pb-24"
       style={{
         background:
-          "linear-gradient(to bottom, #FFF9EB 0%, #FFFFFF 55%, #FFF7D9 100%)",
+          "linear-gradient(180deg,#F7F5EF 0%,#FBFAF7 48%,#F0ECE3 100%)",
+        color: "#111111",
       }}
     >
-      {onBack && (
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={onBack}
-          className="-ml-2 mb-4"
-        >
-          <ArrowLeft className="w-4 h-4 mr-2" />
-          Back to Progress
-        </Button>
-      )}
+      <div style={{ padding: "20px 15px 0" }}>
+        {onBack && (
+          <motion.button
+            type="button"
+            whileTap={{ scale: 0.96 }}
+            onClick={onBack}
+            className="flex items-center gap-2"
+            style={{
+              border: "none",
+              background: "transparent",
+              padding: "4px 0",
+              marginBottom: "14px",
+              color: "#6F6961",
+              fontSize: "9px",
+              fontWeight: 800,
+              cursor: "pointer",
+            }}
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Back to Progress
+          </motion.button>
+        )}
 
-      <div className="space-y-5">
-        <motion.div
-          initial={{ opacity: 0, y: -12 }}
+        <motion.header
+          initial={{ opacity: 0, y: -8 }}
           animate={{ opacity: 1, y: 0 }}
+          style={{ marginBottom: "17px" }}
         >
-          <div className="flex items-center gap-2 mb-2">
-            <Sparkles className="w-5 h-5 text-[#C59F00]" />
-            <h1 className="m-0 text-2xl font-bold">
-              Marquis Insights
-            </h1>
-          </div>
-          <p className="m-0 text-sm text-[#595959]">
-            Generated from your current Google Classroom workload
-          </p>
-        </motion.div>
-
-        {!googleProviderToken ? (
-          <Card className="p-5">
-            Sign in with Google to generate live insights.
-          </Card>
-        ) : loading ? (
-          <Card className="p-5 flex items-center gap-3">
-            <Clock className="w-5 h-5" />
-            Loading your academic picture...
-          </Card>
-        ) : error ? (
-          <Card className="p-5 text-red-700">
-            {error}
-          </Card>
-        ) : (
-          <>
-            <Card
-              className="border-0 p-6"
+          <div className="flex items-center gap-2">
+            <Sparkles
+              className="h-4 w-4"
+              style={{ color: "#B38F00" }}
+            />
+            <span
               style={{
-                borderRadius: "22px",
-                boxShadow:
-                  "0 8px 26px rgba(0,0,0,.06)",
+                color: "#9A7D00",
+                fontSize: "8px",
+                fontWeight: 900,
+                letterSpacing: "0.08em",
+                textTransform: "uppercase",
               }}
             >
-              <div className="flex items-start gap-4">
-                <div
-                  className="w-1 h-20 rounded-full shrink-0"
-                  style={{
-                    background:
-                      "linear-gradient(180deg,#FFD500,#A78BFA)",
-                  }}
-                />
+              Your Study Coach
+            </span>
+          </div>
 
+          <h1
+            style={{
+              margin: "6px 0 0",
+              fontSize: "29px",
+              lineHeight: 1,
+              fontWeight: 900,
+              letterSpacing: "-0.045em",
+            }}
+          >
+            Make this week work better.
+          </h1>
+
+          <p
+            style={{
+              margin: "8px 0 0",
+              maxWidth: "310px",
+              color: "#77716A",
+              fontSize: "10px",
+              lineHeight: 1.45,
+              fontWeight: 600,
+            }}
+          >
+            School, assessments, tutoring and your study habits —
+            considered together.
+          </p>
+        </motion.header>
+
+        {!googleProviderToken ? (
+          <section
+            style={{
+              padding: "17px",
+              borderRadius: "24px",
+              background: "rgba(255,255,255,0.82)",
+              border: "1px solid rgba(255,255,255,0.96)",
+              boxShadow: "0 12px 28px rgba(0,0,0,0.05)",
+            }}
+          >
+            <p
+              style={{
+                margin: 0,
+                fontSize: "10px",
+                fontWeight: 800,
+              }}
+            >
+              Connect Google Classroom to combine live schoolwork
+              with your study coach.
+            </p>
+          </section>
+        ) : loading ? (
+          <section
+            className="flex items-center gap-3"
+            style={{
+              padding: "17px",
+              borderRadius: "24px",
+              background: "rgba(255,255,255,0.82)",
+            }}
+          >
+            <Clock className="h-4 w-4" />
+            <span
+              style={{
+                fontSize: "9px",
+                color: "#77716A",
+              }}
+            >
+              Building your academic picture…
+            </span>
+          </section>
+        ) : error ? (
+          <section
+            style={{
+              padding: "17px",
+              borderRadius: "24px",
+              background: "#FFF2F2",
+              color: "#B54242",
+              fontSize: "9px",
+            }}
+          >
+            {error}
+          </section>
+        ) : (
+          <div className="space-y-4">
+            <motion.section
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              style={{
+                position: "relative",
+                overflow: "hidden",
+                padding: "20px",
+                borderRadius: "29px",
+                background:
+                  "linear-gradient(145deg,#171717 0%,#080808 100%)",
+                color: "#FFFFFF",
+                boxShadow: "0 18px 38px rgba(0,0,0,0.15)",
+              }}
+            >
+              <motion.div
+                aria-hidden="true"
+                animate={{
+                  rotate: [0, 8, 0],
+                  scale: [1, 1.05, 1],
+                }}
+                transition={{
+                  duration: 8,
+                  repeat: Infinity,
+                  ease: "easeInOut",
+                }}
+                style={{
+                  position: "absolute",
+                  width: "140px",
+                  height: "140px",
+                  borderRadius: "40px",
+                  right: "-58px",
+                  top: "-68px",
+                  background: "rgba(255,213,0,0.95)",
+                  transform: "rotate(14deg)",
+                }}
+              />
+
+              <div className="relative z-10">
+                <p
+                  style={{
+                    margin: 0,
+                    color: "#FFD500",
+                    fontSize: "7px",
+                    fontWeight: 900,
+                    textTransform: "uppercase",
+                    letterSpacing: "0.08em",
+                  }}
+                >
+                  This week's recommendation · {coachFocus.eyebrow}
+                </p>
+
+                <h2
+                  style={{
+                    margin: "8px 0 0",
+                    maxWidth: "260px",
+                    fontSize: "20px",
+                    lineHeight: 1.08,
+                    fontWeight: 900,
+                    letterSpacing: "-0.03em",
+                  }}
+                >
+                  {coachFocus.title}
+                </h2>
+
+                <p
+                  style={{
+                    margin: "9px 0 0",
+                    maxWidth: "280px",
+                    color: "rgba(255,255,255,0.64)",
+                    fontSize: "9px",
+                    lineHeight: 1.5,
+                  }}
+                >
+                  {coachFocus.body}
+                </p>
+
+                <motion.button
+                  type="button"
+                  whileHover={{ y: -2 }}
+                  whileTap={{ scale: 0.97 }}
+                  onClick={() => setShowStudyPlan(true)}
+                  className="flex items-center gap-2"
+                  style={{
+                    marginTop: "16px",
+                    border: "none",
+                    borderRadius: "13px",
+                    background: "#FFD500",
+                    color: "#090909",
+                    padding: "10px 12px",
+                    fontSize: "8.5px",
+                    fontWeight: 900,
+                    cursor: "pointer",
+                  }}
+                >
+                  {coachFocus.action}
+                  <ArrowUpRight className="h-3.5 w-3.5" />
+                </motion.button>
+              </div>
+            </motion.section>
+
+            <section
+              style={{
+                padding: "17px",
+                borderRadius: "27px",
+                background: "rgba(255,255,255,0.80)",
+                backdropFilter: "blur(22px)",
+                WebkitBackdropFilter: "blur(22px)",
+                border: "1px solid rgba(255,255,255,0.96)",
+                boxShadow: "0 13px 30px rgba(0,0,0,0.055)",
+              }}
+            >
+              <div className="flex items-center justify-between gap-3">
                 <div>
-                  <h2 className="m-0 text-lg font-bold">
-                    Your current workload
+                  <h2
+                    style={{
+                      margin: 0,
+                      fontSize: "15px",
+                      fontWeight: 900,
+                    }}
+                  >
+                    Routine pulse
                   </h2>
-                  <p className="mt-3 mb-0 text-sm text-[#595959] leading-relaxed">
-                    You currently have{" "}
-                    <strong>{insights.incomplete.length}</strong>{" "}
-                    incomplete Classroom tasks.
-                    {insights.overdue.length > 0
-                      ? ` ${insights.overdue.length} are overdue.`
-                      : " Nothing is currently overdue."}
-                    {insights.dueSevenDays.length > 0
-                      ? ` ${insights.dueSevenDays.length} are due within the next 7 days.`
-                      : ""}
-                    {insights.upcomingSchoolAssessments.length > 0
-                      ? ` You have also added ${insights.upcomingSchoolAssessments.length} upcoming school assessment(s).`
-                      : ""}
+                  <p
+                    style={{
+                      margin: "4px 0 0",
+                      color: "#837D75",
+                      fontSize: "8px",
+                    }}
+                  >
+                    How your study behaviour is developing.
                   </p>
                 </div>
-              </div>
-            </Card>
 
-            <div className="grid grid-cols-3 gap-3">
-              <Summary
-                label="Overdue"
-                value={insights.overdue.length}
-                icon={<AlertCircle className="w-5 h-5" />}
-              />
-              <Summary
-                label="Due 7 Days"
-                value={insights.dueSevenDays.length}
-                icon={<Calendar className="w-5 h-5" />}
-              />
-              <Summary
-                label="School"
-                value={insights.upcomingSchoolAssessments.length}
-                icon={<BookOpen className="w-5 h-5" />}
-              />
-            </div>
-
-            <div className="space-y-3">
-              <p className="text-xs font-bold tracking-wider text-[#666]">
-                LIVE PRIORITIES
-              </p>
-
-              {insights.overdue.length > 0 && (
-                <InsightCard
-                  icon={<AlertCircle className="w-5 h-5" />}
-                  title="Clear overdue work first"
-                  text={`${insights.overdue.length} incomplete ${
-                    insights.overdue.length === 1
-                      ? "task is"
-                      : "tasks are"
-                  } already past the due date.`}
-                />
-              )}
-
-              {insights.upcoming[0] && (
-                <InsightCard
-                  icon={<Calendar className="w-5 h-5" />}
-                  title="Closest deadline"
-                  text={`${insights.upcoming[0].courseName}: ${
-                    insights.upcoming[0].title
-                  } is due in ${Math.max(
-                    0,
-                    daysUntil(getDueDate(insights.upcoming[0])!)
-                  )} day(s).`}
-                />
-              )}
-
-              {insights.upcomingSchoolAssessments[0] && (
-                <InsightCard
-                  icon={<Calendar className="w-5 h-5" />}
-                  title="Next school assessment"
-                  text={`${insights.upcomingSchoolAssessments[0].subject}: ${insights.upcomingSchoolAssessments[0].title} is due in ${Math.max(
-                    0,
-                    daysUntil(
-                      new Date(
-                        insights.upcomingSchoolAssessments[0].due_at
-                      )
-                    )
-                  )} day(s)${
-                    insights.upcomingSchoolAssessments[0].weighting !== null
-                      ? ` and is worth ${insights.upcomingSchoolAssessments[0].weighting}%`
-                      : ""
-                  }.`}
-                />
-              )}
-
-              {insights.weakest && (
-                <InsightCard
-                  icon={<TrendingUp className="w-5 h-5" />}
-                  title="Lowest graded average"
-                  text={`${insights.weakest.name} currently has the lowest available graded average at ${Math.round(
-                    insights.weakest.average!
-                  )}%.`}
-                />
-              )}
-
-              {insights.busiest && (
-                <InsightCard
-                  icon={<Target className="w-5 h-5" />}
-                  title="Highest workload"
-                  text={`${insights.busiest.name} has ${insights.busiest.pending} incomplete task(s) in the current Classroom data.`}
-                />
-              )}
-
-              {insights.incomplete.length === 0 && (
-                <InsightCard
-                  icon={<CheckCircle2 className="w-5 h-5" />}
-                  title="You're clear"
-                  text="No incomplete Classroom work is currently visible."
-                />
-              )}
-            </div>
-
-            <div className="space-y-3">
-              <p className="text-xs font-bold tracking-wider text-[#666]">
-                CLASS OVERVIEW
-              </p>
-
-              {insights.courseStats.map((course) => (
-                <Card
-                  key={course.id}
-                  className="p-4 border border-black/5"
-                  style={{ borderRadius: "16px" }}
+                <div
+                  className="flex items-center justify-center"
+                  style={{
+                    width: "35px",
+                    height: "35px",
+                    borderRadius: "13px",
+                    background: "#FFF4B5",
+                  }}
                 >
-                  <div className="flex justify-between gap-4 mb-3">
-                    <div>
-                      <h3 className="m-0 text-sm font-bold">
-                        {course.name}
-                      </h3>
-                      <p className="m-0 mt-1 text-xs text-[#595959]">
-                        {course.pending} incomplete
-                      </p>
-                    </div>
+                  <Flame className="h-4 w-4" />
+                </div>
+              </div>
 
-                    <div className="text-right">
-                      <p className="m-0 font-extrabold">
-                        {course.average === null
-                          ? "—"
-                          : `${Math.round(course.average)}%`}
-                      </p>
-                      <p className="m-0 text-[10px] text-[#777]">
-                        graded average
-                      </p>
-                    </div>
-                  </div>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(3,minmax(0,1fr))",
+                  gap: "8px",
+                  marginTop: "14px",
+                }}
+              >
+                {[
+                  {
+                    icon: TimerReset,
+                    value: focusSessionsCompleted,
+                    label: "focus sessions",
+                  },
+                  {
+                    icon: Star,
+                    value: quizQuestionsCorrect,
+                    label: "quiz correct",
+                  },
+                  {
+                    icon: CheckCircle2,
+                    value: completedClassroom,
+                    label: "tasks complete",
+                  },
+                ].map((item) => {
+                  const Icon = item.icon;
 
-                  <Progress
-                    value={course.completion}
-                    className="h-2.5"
-                  />
-                </Card>
-              ))}
-            </div>
+                  return (
+                    <motion.div
+                      key={item.label}
+                      whileHover={{ y: -2 }}
+                      style={{
+                        minWidth: 0,
+                        padding: "11px 9px",
+                        borderRadius: "16px",
+                        background: "#F6F3EC",
+                      }}
+                    >
+                      <Icon
+                        className="h-4 w-4"
+                        style={{ color: "#9C7C00" }}
+                      />
+                      <strong
+                        style={{
+                          display: "block",
+                          marginTop: "7px",
+                          fontSize: "15px",
+                          lineHeight: 1,
+                          fontWeight: 900,
+                        }}
+                      >
+                        {item.value}
+                      </strong>
+                      <span
+                        style={{
+                          display: "block",
+                          marginTop: "4px",
+                          color: "#837D75",
+                          fontSize: "7px",
+                          lineHeight: 1.25,
+                          fontWeight: 750,
+                        }}
+                      >
+                        {item.label}
+                      </span>
+                    </motion.div>
+                  );
+                })}
+              </div>
+            </section>
 
-            <Button
-              className="w-full h-12"
-              onClick={() => setShowStudyPlan(true)}
-              disabled={insights.incomplete.length === 0 && insights.upcomingSchoolAssessments.length === 0}
+            <motion.section
+              whileHover={{ y: -2 }}
+              style={{
+                padding: "17px",
+                borderRadius: "27px",
+                background:
+                  "linear-gradient(135deg,rgba(255,248,207,0.95),rgba(255,255,255,0.90))",
+                border: "1px solid rgba(255,213,0,0.18)",
+                boxShadow: "0 12px 28px rgba(0,0,0,0.05)",
+              }}
             >
-              <Sparkles className="w-4 h-4 mr-2" />
-              Build Study Schedule
-            </Button>
+              <div className="flex items-start gap-3">
+                <div
+                  className="flex shrink-0 items-center justify-center"
+                  style={{
+                    width: "36px",
+                    height: "36px",
+                    borderRadius: "13px",
+                    background: "#FFD500",
+                  }}
+                >
+                  <Lightbulb className="h-4 w-4" />
+                </div>
 
-            <p className="text-[11px] text-center text-[#777]">
-              The schedule combines live Classroom deadlines with
-              school assessments you add yourself. Recommended session
-              lengths are planning estimates, not teacher-provided durations.
-            </p>
-          </>
+                <div className="min-w-0 flex-1">
+                  <p
+                    style={{
+                      margin: 0,
+                      color: "#9A7D00",
+                      fontSize: "7px",
+                      fontWeight: 900,
+                      textTransform: "uppercase",
+                      letterSpacing: "0.07em",
+                    }}
+                  >
+                    Coach insight
+                  </p>
+
+                  <p
+                    style={{
+                      margin: "6px 0 0",
+                      fontSize: "10px",
+                      lineHeight: 1.5,
+                      fontWeight: 750,
+                    }}
+                  >
+                    {coachInsight}
+                  </p>
+
+                  {onNavigateToFocus && (
+                    <button
+                      type="button"
+                      onClick={onNavigateToFocus}
+                      style={{
+                        marginTop: "10px",
+                        border: "none",
+                        background: "transparent",
+                        padding: 0,
+                        color: "#8A6D00",
+                        fontSize: "8px",
+                        fontWeight: 900,
+                        cursor: "pointer",
+                      }}
+                    >
+                      Start a focus session →
+                    </button>
+                  )}
+                </div>
+              </div>
+            </motion.section>
+
+            <section
+              style={{
+                padding: "17px",
+                borderRadius: "27px",
+                background: "rgba(255,255,255,0.82)",
+                border: "1px solid rgba(255,255,255,0.96)",
+                boxShadow: "0 13px 30px rgba(0,0,0,0.055)",
+              }}
+            >
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h2
+                    style={{
+                      margin: 0,
+                      fontSize: "15px",
+                      fontWeight: 900,
+                    }}
+                  >
+                    Suggested rhythm
+                  </h2>
+                  <p
+                    style={{
+                      margin: "4px 0 0",
+                      color: "#837D75",
+                      fontSize: "8px",
+                    }}
+                  >
+                    A manageable way to start — not a full timetable.
+                  </p>
+                </div>
+                <Target
+                  className="h-4 w-4"
+                  style={{ color: "#A78700" }}
+                />
+              </div>
+
+              <div style={{ marginTop: "12px" }}>
+                {suggestedBlocks.map((block, index) => (
+                  <motion.div
+                    key={block.label}
+                    whileHover={{ x: 3 }}
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "54px minmax(0,1fr)",
+                      gap: "10px",
+                      padding:
+                        index === 0
+                          ? "3px 0 10px"
+                          : "10px 0",
+                      borderTop:
+                        index === 0
+                          ? "none"
+                          : "1px solid #EEEAE3",
+                    }}
+                  >
+                    <span
+                      style={{
+                        color: "#9B7B00",
+                        fontSize: "7px",
+                        fontWeight: 900,
+                        textTransform: "uppercase",
+                      }}
+                    >
+                      {block.label}
+                    </span>
+
+                    <div>
+                      <p
+                        style={{
+                          margin: 0,
+                          fontSize: "9px",
+                          fontWeight: 850,
+                        }}
+                      >
+                        {block.title}
+                      </p>
+                      <p
+                        style={{
+                          margin: "3px 0 0",
+                          color: "#8A837A",
+                          fontSize: "7.5px",
+                        }}
+                      >
+                        {block.detail}
+                      </p>
+                    </div>
+                  </motion.div>
+                ))}
+              </div>
+            </section>
+
+            <section
+              style={{
+                padding: "17px",
+                borderRadius: "27px",
+                background: "rgba(255,255,255,0.82)",
+                border: "1px solid rgba(255,255,255,0.96)",
+                boxShadow: "0 13px 30px rgba(0,0,0,0.055)",
+              }}
+            >
+              <div>
+                <h2
+                  style={{
+                    margin: 0,
+                    fontSize: "15px",
+                    fontWeight: 900,
+                  }}
+                >
+                  Your next 7 days
+                </h2>
+                <p
+                  style={{
+                    margin: "4px 0 0",
+                    color: "#837D75",
+                    fontSize: "8px",
+                  }}
+                >
+                  School assessments and Classroom deadlines together.
+                </p>
+              </div>
+
+              {mergedNextSevenDays.length === 0 ? (
+                <div
+                  style={{
+                    marginTop: "13px",
+                    padding: "17px",
+                    borderRadius: "17px",
+                    background: "#F6F3EC",
+                    textAlign: "center",
+                  }}
+                >
+                  <CheckCircle2
+                    className="mx-auto h-4 w-4"
+                    style={{ color: "#9B7B00" }}
+                  />
+                  <p
+                    style={{
+                      margin: "7px 0 0",
+                      fontSize: "8px",
+                      fontWeight: 800,
+                    }}
+                  >
+                    Nothing major is due in the next 7 days.
+                  </p>
+                </div>
+              ) : (
+                <div style={{ marginTop: "12px" }}>
+                  {mergedNextSevenDays.map((item, index) => {
+                    const dueIn = Math.max(
+                      0,
+                      daysUntil(item.dueAt)
+                    );
+
+                    return (
+                      <motion.div
+                        key={item.id}
+                        whileHover={{ x: 3 }}
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns:
+                            "35px minmax(0,1fr) 50px",
+                          alignItems: "center",
+                          gap: "10px",
+                          padding:
+                            index === 0
+                              ? "4px 0 10px"
+                              : "10px 0",
+                          borderTop:
+                            index === 0
+                              ? "none"
+                              : "1px solid #EEEAE3",
+                        }}
+                      >
+                        <div
+                          className="flex items-center justify-center"
+                          style={{
+                            width: "35px",
+                            height: "35px",
+                            borderRadius: "12px",
+                            background:
+                              item.source === "School"
+                                ? "#111111"
+                                : "#FFF4B5",
+                            color:
+                              item.source === "School"
+                                ? "#FFD500"
+                                : "#111111",
+                          }}
+                        >
+                          {item.source === "School" ? (
+                            <GraduationCap className="h-4 w-4" />
+                          ) : (
+                            <BookOpen className="h-4 w-4" />
+                          )}
+                        </div>
+
+                        <div className="min-w-0">
+                          <p
+                            style={{
+                              margin: 0,
+                              color: "#8B847B",
+                              fontSize: "6.5px",
+                              fontWeight: 800,
+                              whiteSpace: "nowrap",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                            }}
+                          >
+                            {item.subject} · {item.source}
+                          </p>
+                          <p
+                            style={{
+                              margin: "3px 0 0",
+                              fontSize: "8.5px",
+                              fontWeight: 850,
+                              whiteSpace: "nowrap",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                            }}
+                          >
+                            {item.title}
+                          </p>
+                          {item.weighting !== null && (
+                            <p
+                              style={{
+                                margin: "2px 0 0",
+                                color: "#918A82",
+                                fontSize: "6px",
+                              }}
+                            >
+                              {item.weighting}% weighting
+                            </p>
+                          )}
+                        </div>
+
+                        <div style={{ textAlign: "right" }}>
+                          <strong
+                            style={{
+                              display: "block",
+                              fontSize: "8px",
+                              color:
+                                dueIn <= 2
+                                  ? "#C34C4C"
+                                  : "#111111",
+                            }}
+                          >
+                            {dueIn === 0
+                              ? "Today"
+                              : dueIn === 1
+                              ? "Tomorrow"
+                              : `${dueIn}d`}
+                          </strong>
+                          <span
+                            style={{
+                              display: "block",
+                              marginTop: "3px",
+                              color: "#918A82",
+                              fontSize: "6px",
+                            }}
+                          >
+                            {item.dueAt.toLocaleDateString("en-AU", {
+                              day: "numeric",
+                              month: "short",
+                            })}
+                          </span>
+                        </div>
+                      </motion.div>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+
+            <motion.button
+              type="button"
+              whileHover={{ y: -3 }}
+              whileTap={{ scale: 0.985 }}
+              onClick={() => setShowStudyPlan(true)}
+              style={{
+                width: "100%",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: "12px",
+                padding: "16px",
+                border: "none",
+                borderRadius: "24px",
+                background: "#FFD500",
+                color: "#111111",
+                textAlign: "left",
+                cursor: "pointer",
+                boxShadow:
+                  "0 13px 28px rgba(255,213,0,0.17)",
+              }}
+            >
+              <div>
+                <p
+                  style={{
+                    margin: 0,
+                    fontSize: "7px",
+                    fontWeight: 900,
+                    textTransform: "uppercase",
+                    letterSpacing: "0.07em",
+                  }}
+                >
+                  Routine builder
+                </p>
+                <p
+                  style={{
+                    margin: "4px 0 0",
+                    fontSize: "13px",
+                    fontWeight: 900,
+                  }}
+                >
+                  Build my study week
+                </p>
+                <p
+                  style={{
+                    margin: "3px 0 0",
+                    maxWidth: "245px",
+                    fontSize: "7.5px",
+                    lineHeight: 1.4,
+                    color: "rgba(0,0,0,0.58)",
+                  }}
+                >
+                  Turn deadlines and assessments into manageable study
+                  blocks.
+                </p>
+              </div>
+
+              <ChevronRight className="h-5 w-5 shrink-0" />
+            </motion.button>
+          </div>
         )}
       </div>
     </div>
-  );
-}
-
-function Summary({
-  label,
-  value,
-  icon,
-}: {
-  label: string;
-  value: number;
-  icon: React.ReactNode;
-}) {
-  return (
-    <Card className="p-4 text-center border border-black/5">
-      <div className="mx-auto mb-2 w-9 h-9 rounded-xl flex items-center justify-center bg-[#FFD50022] text-[#C59F00]">
-        {icon}
-      </div>
-      <p className="m-0 text-xl font-extrabold">{value}</p>
-      <p className="m-0 mt-1 text-[10px] text-[#666]">
-        {label}
-      </p>
-    </Card>
-  );
-}
-
-function InsightCard({
-  icon,
-  title,
-  text,
-}: {
-  icon: React.ReactNode;
-  title: string;
-  text: string;
-}) {
-  return (
-    <Card
-      className="p-4 border border-[#FFD50044]"
-      style={{
-        background: "#FFFDF4",
-        borderRadius: "16px",
-      }}
-    >
-      <div className="flex gap-3">
-        <div className="text-[#C59F00] mt-0.5">{icon}</div>
-        <div>
-          <h3 className="m-0 text-sm font-bold">{title}</h3>
-          <p className="m-0 mt-1 text-xs text-[#595959] leading-relaxed">
-            {text}
-          </p>
-        </div>
-      </div>
-    </Card>
   );
 }

@@ -1,22 +1,26 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  AlertCircle,
   ArrowUpRight,
   BookOpen,
   Calendar,
+  CheckCircle2,
   ChevronRight,
-  Clock,
+  Clock3,
+  FileText,
+  FlaskConical,
+  GraduationCap,
+  Lightbulb,
+  NotebookTabs,
   Target,
   TrendingUp,
-  Zap,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 
-import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
-import { Card } from "./ui/card";
-
 import { useAuth } from "../contexts/AuthContext";
 import { useData } from "../contexts/DataContext";
+
 
 import {
   getGoogleClassroomCourses,
@@ -44,52 +48,8 @@ interface CoursePerformance {
   metrics: Array<{
     name: string;
     progress: number;
-    icon: string;
   }>;
 }
-
-const inspirationalQuotes = [
-  {
-    text: "Education is the most powerful weapon which you can use to change the world.",
-    author: "Nelson Mandela",
-  },
-  {
-    text: "The beautiful thing about learning is that no one can take it away from you.",
-    author: "B.B. King",
-  },
-  {
-    text: "Success is the sum of small efforts repeated day in and day out.",
-    author: "Robert Collier",
-  },
-  {
-    text: "The expert in anything was once a beginner.",
-    author: "Helen Hayes",
-  },
-  {
-    text: "You don't have to be great to start, but you have to start to be great.",
-    author: "Zig Ziglar",
-  },
-  {
-    text: "The only way to do great work is to love what you do.",
-    author: "Steve Jobs",
-  },
-  {
-    text: "Believe you can and you're halfway there.",
-    author: "Theodore Roosevelt",
-  },
-  {
-    text: "Don't watch the clock; do what it does. Keep going.",
-    author: "Sam Levenson",
-  },
-  {
-    text: "The future belongs to those who believe in the beauty of their dreams.",
-    author: "Eleanor Roosevelt",
-  },
-  {
-    text: "It always seems impossible until it's done.",
-    author: "Nelson Mandela",
-  },
-];
 
 function getDueDate(work: GoogleClassroomCourseWork): Date | null {
   if (!work.dueDate) return null;
@@ -116,35 +76,114 @@ function clampPercent(value: number) {
   return Math.max(0, Math.min(100, Math.round(value)));
 }
 
+function formatDueLabel(work: ClassroomWorkItem) {
+  const due = getDueDate(work);
+  if (!due) return "No due date";
+
+  const today = new Date();
+  const start = new Date(
+    today.getFullYear(),
+    today.getMonth(),
+    today.getDate()
+  );
+  const target = new Date(
+    due.getFullYear(),
+    due.getMonth(),
+    due.getDate()
+  );
+
+  const days = Math.round(
+    (target.getTime() - start.getTime()) / 86400000
+  );
+
+  if (days < 0) {
+    const overdueBy = Math.abs(days);
+    return `${overdueBy} ${overdueBy === 1 ? "day" : "days"} overdue`;
+  }
+
+  if (days === 0) return "Due today";
+  if (days === 1) return "Due tomorrow";
+  return `Due in ${days} days`;
+}
+
+function SectionTitle({
+  title,
+  subtitle,
+}: {
+  title: string;
+  subtitle?: string;
+}) {
+  return (
+    <div>
+      <h2
+        style={{
+          margin: 0,
+          fontSize: "20px",
+          lineHeight: 1.05,
+          fontWeight: 850,
+          letterSpacing: "-0.035em",
+          color: "#080808",
+        }}
+      >
+        {title}
+      </h2>
+
+      {subtitle && (
+        <p
+          style={{
+            margin: "5px 0 0",
+            color: "#77716A",
+            fontSize: "10px",
+            fontWeight: 650,
+            lineHeight: 1.4,
+          }}
+        >
+          {subtitle}
+        </p>
+      )}
+    </div>
+  );
+}
+
 export function HomePage({ onNavigate }: HomePageProps) {
-  const { currentStudent, getUpcomingClasses, loading } = useData();
-  const { googleProviderToken } = useAuth();
+  const {
+    currentStudent,
+    getUpcomingClasses,
+    loading,
+  } = useData();
 
-  const upcomingClasses = getUpcomingClasses(currentStudent?.id);
+  const {
+    googleProviderToken,
+    googleIdentityLinked,
+    isConnectingGoogle,
+    connectGoogleClassroom,
+  } = useAuth();
 
-  const [currentQuoteIndex, setCurrentQuoteIndex] = useState(0);
-  const [activePerformanceIndex, setActivePerformanceIndex] = useState(0);
+  const upcomingClasses =
+    getUpcomingClasses(currentStudent?.id);
 
-  const [googleCourses, setGoogleCourses] = useState<
-    GoogleClassroomCourse[]
-  >([]);
+  const [
+    activePerformanceIndex,
+    setActivePerformanceIndex,
+  ] = useState(0);
 
-  const [googleCoursework, setGoogleCoursework] = useState<
-    ClassroomWorkItem[]
-  >([]);
+  const [googleCourses, setGoogleCourses] =
+    useState<GoogleClassroomCourse[]>([]);
 
-  const [classroomLoading, setClassroomLoading] = useState(false);
-  const [classroomError, setClassroomError] = useState<string | null>(null);
+  const [
+    googleCoursework,
+    setGoogleCoursework,
+  ] = useState<ClassroomWorkItem[]>([]);
 
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setCurrentQuoteIndex(
-        (prev) => (prev + 1) % inspirationalQuotes.length
-      );
-    }, 60000);
+  const [
+    classroomLoading,
+    setClassroomLoading,
+  ] = useState(false);
 
-    return () => clearInterval(interval);
-  }, []);
+  const [
+    classroomError,
+    setClassroomError,
+  ] = useState<string | null>(null);
 
   useEffect(() => {
     const loadClassroom = async () => {
@@ -159,41 +198,55 @@ export function HomePage({ onNavigate }: HomePageProps) {
       setClassroomError(null);
 
       try {
-        const courses = await getGoogleClassroomCourses(
-          googleProviderToken
-        );
+        const courses =
+          await getGoogleClassroomCourses(
+            googleProviderToken
+          );
 
         setGoogleCourses(courses);
 
-        const courseworkByCourse = await Promise.all(
-          courses.map(async (course) => {
-            const [coursework, submissions] = await Promise.all([
-              getGoogleClassroomCoursework(
-                course.id,
-                googleProviderToken
-              ),
-              getMyGoogleClassroomSubmissions(
-                course.id,
-                googleProviderToken
-              ),
-            ]);
-
-            return coursework.map(
-              (work): ClassroomWorkItem => ({
-                ...work,
-                courseName: course.name,
-                submission: submissions.find(
-                  (submission) =>
-                    submission.courseWorkId === work.id
+        const courseworkByCourse =
+          await Promise.all(
+            courses.map(async (course) => {
+              const [
+                coursework,
+                submissions,
+              ] = await Promise.all([
+                getGoogleClassroomCoursework(
+                  course.id,
+                  googleProviderToken
                 ),
-              })
-            );
-          })
-        );
+                getMyGoogleClassroomSubmissions(
+                  course.id,
+                  googleProviderToken
+                ),
+              ]);
 
-        setGoogleCoursework(courseworkByCourse.flat());
+              return coursework.map(
+                (
+                  work
+                ): ClassroomWorkItem => ({
+                  ...work,
+                  courseName: course.name,
+                  submission:
+                    submissions.find(
+                      (submission) =>
+                        submission.courseWorkId ===
+                        work.id
+                    ),
+                })
+              );
+            })
+          );
+
+        setGoogleCoursework(
+          courseworkByCourse.flat()
+        );
       } catch (error) {
-        console.error("Home Classroom load failed:", error);
+        console.error(
+          "Home Classroom load failed:",
+          error
+        );
 
         setClassroomError(
           error instanceof Error
@@ -221,155 +274,192 @@ export function HomePage({ onNavigate }: HomePageProps) {
     todayEnd.setHours(23, 59, 59, 999);
 
     const sevenDaysEnd = new Date(todayEnd);
-    sevenDaysEnd.setDate(sevenDaysEnd.getDate() + 7);
-
-    const recentCutoff = new Date(todayStart);
-    recentCutoff.setDate(recentCutoff.getDate() - 60);
-
-    const relevantWork = googleCoursework.filter((work) => {
-      const dueDate = getDueDate(work);
-      return !dueDate || dueDate >= recentCutoff;
-    });
-
-    const overdue = relevantWork.filter((work) => {
-      const dueDate = getDueDate(work);
-
-      return (
-        !isSubmitted(work) &&
-        Boolean(dueDate) &&
-        dueDate! < todayStart
-      );
-    });
-
-    const dueToday = relevantWork.filter((work) => {
-      const dueDate = getDueDate(work);
-
-      return (
-        !isSubmitted(work) &&
-        Boolean(dueDate) &&
-        dueDate! >= todayStart &&
-        dueDate! <= todayEnd
-      );
-    });
-
-    const dueNext7Days = relevantWork.filter((work) => {
-      const dueDate = getDueDate(work);
-
-      return (
-        !isSubmitted(work) &&
-        Boolean(dueDate) &&
-        dueDate! > todayEnd &&
-        dueDate! <= sevenDaysEnd
-      );
-    });
-
-    const completed = relevantWork.filter((work) =>
-      isSubmitted(work)
+    sevenDaysEnd.setDate(
+      sevenDaysEnd.getDate() + 7
     );
 
-    const gradedResults = relevantWork
-      .filter(
-        (work) =>
-          typeof work.submission?.assignedGrade === "number"
-      )
-      .sort((a, b) => {
-        const aDate = getDueDate(a)?.getTime() ?? 0;
-        const bDate = getDueDate(b)?.getTime() ?? 0;
-        return bDate - aDate;
+    const recentCutoff = new Date(todayStart);
+    recentCutoff.setDate(
+      recentCutoff.getDate() - 60
+    );
+
+    const relevantWork =
+      googleCoursework.filter((work) => {
+        const dueDate = getDueDate(work);
+        return !dueDate || dueDate >= recentCutoff;
       });
 
-    const performanceByCourse: CoursePerformance[] = googleCourses
-      .map((course) => {
-        const courseWork = relevantWork.filter(
-          (work) => work.courseId === course.id
-        );
-
-        if (courseWork.length === 0) return null;
-
-        const courseCompleted = courseWork.filter(isSubmitted).length;
-
-        const courseOverdue = courseWork.filter((work) => {
-          const dueDate = getDueDate(work);
-
-          return (
-            !isSubmitted(work) &&
-            Boolean(dueDate) &&
-            dueDate! < todayStart
-          );
-        }).length;
-
-        const courseUpcoming = courseWork.filter((work) => {
-          const dueDate = getDueDate(work);
-
-          return (
-            !isSubmitted(work) &&
-            Boolean(dueDate) &&
-            dueDate! >= todayStart
-          );
-        }).length;
-
-        const total = courseWork.length;
-
-        const completionRate =
-          total > 0 ? (courseCompleted / total) * 100 : 0;
-
-        const submittedPercent =
-          total > 0 ? (courseCompleted / total) * 100 : 0;
-
-        const upcomingPercent =
-          total > 0 ? (courseUpcoming / total) * 100 : 0;
-
-        const overduePercent =
-          total > 0 ? (courseOverdue / total) * 100 : 0;
-
-        return {
-          id: course.id,
-          subject: course.name,
-          average: clampPercent(completionRate),
-          yearLabel: currentStudent?.yearLevel ?? "",
-          metrics: [
-            {
-              name: "Completed",
-              progress: clampPercent(submittedPercent),
-              icon: "✓",
-            },
-            {
-              name: "Upcoming",
-              progress: clampPercent(upcomingPercent),
-              icon: "📅",
-            },
-            {
-              name: "Overdue",
-              progress: clampPercent(overduePercent),
-              icon: "!",
-            },
-          ],
-        };
-      })
-      .filter(
-        (value): value is CoursePerformance => value !== null
-      )
-      .sort((a, b) => b.average - a.average);
-
-    const nextAssignment = relevantWork
-      .filter((work) => {
+    const overdue =
+      relevantWork.filter((work) => {
         const dueDate = getDueDate(work);
 
         return (
           !isSubmitted(work) &&
           Boolean(dueDate) &&
-          dueDate! >= todayStart
+          dueDate! < todayStart
         );
-      })
+      });
+
+    const dueToday =
+      relevantWork.filter((work) => {
+        const dueDate = getDueDate(work);
+
+        return (
+          !isSubmitted(work) &&
+          Boolean(dueDate) &&
+          dueDate! >= todayStart &&
+          dueDate! <= todayEnd
+        );
+      });
+
+    const dueNext7Days =
+      relevantWork.filter((work) => {
+        const dueDate = getDueDate(work);
+
+        return (
+          !isSubmitted(work) &&
+          Boolean(dueDate) &&
+          dueDate! > todayEnd &&
+          dueDate! <= sevenDaysEnd
+        );
+      });
+
+    const completed =
+      relevantWork.filter((work) =>
+        isSubmitted(work)
+      );
+
+    const gradedResults = relevantWork
+      .filter(
+        (work) =>
+          typeof work.submission
+            ?.assignedGrade === "number"
+      )
       .sort((a, b) => {
         const aDate =
-          getDueDate(a)?.getTime() ?? Number.MAX_SAFE_INTEGER;
-
+          getDueDate(a)?.getTime() ?? 0;
         const bDate =
-          getDueDate(b)?.getTime() ?? Number.MAX_SAFE_INTEGER;
+          getDueDate(b)?.getTime() ?? 0;
+        return bDate - aDate;
+      });
 
+    const performanceByCourse:
+      CoursePerformance[] = googleCourses
+      .map((course) => {
+        const courseWork =
+          relevantWork.filter(
+            (work) =>
+              work.courseId === course.id
+          );
+
+        if (courseWork.length === 0) {
+          return null;
+        }
+
+        const courseCompleted =
+          courseWork.filter(isSubmitted)
+            .length;
+
+        const courseOverdue =
+          courseWork.filter((work) => {
+            const dueDate =
+              getDueDate(work);
+
+            return (
+              !isSubmitted(work) &&
+              Boolean(dueDate) &&
+              dueDate! < todayStart
+            );
+          }).length;
+
+        const courseUpcoming =
+          courseWork.filter((work) => {
+            const dueDate =
+              getDueDate(work);
+
+            return (
+              !isSubmitted(work) &&
+              Boolean(dueDate) &&
+              dueDate! >= todayStart
+            );
+          }).length;
+
+        const total = courseWork.length;
+
+        return {
+          id: course.id,
+          subject: course.name,
+          average: clampPercent(
+            total > 0
+              ? (courseCompleted / total) *
+                  100
+              : 0
+          ),
+          yearLabel:
+            currentStudent?.yearLevel ?? "",
+          metrics: [
+            {
+              name: "Completed",
+              progress: clampPercent(
+                total > 0
+                  ? (courseCompleted / total) *
+                      100
+                  : 0
+              ),
+            },
+            {
+              name: "Upcoming",
+              progress: clampPercent(
+                total > 0
+                  ? (courseUpcoming / total) *
+                      100
+                  : 0
+              ),
+            },
+            {
+              name: "Overdue",
+              progress: clampPercent(
+                total > 0
+                  ? (courseOverdue / total) *
+                      100
+                  : 0
+              ),
+            },
+          ],
+        };
+      })
+      .filter(
+        (
+          value
+        ): value is CoursePerformance =>
+          value !== null
+      )
+      .sort(
+        (a, b) =>
+          b.average - a.average
+      );
+
+    const openTasks = [
+      ...overdue,
+      ...dueToday,
+      ...dueNext7Days,
+    ]
+      .filter(
+        (work, index, all) =>
+          all.findIndex(
+            (candidate) =>
+              candidate.id === work.id
+          ) === index
+      )
+      .sort((a, b) => {
+        const aDate =
+          getDueDate(a)?.getTime() ??
+          Number.MAX_SAFE_INTEGER;
+        const bDate =
+          getDueDate(b)?.getTime() ??
+          Number.MAX_SAFE_INTEGER;
         return aDate - bDate;
-      })[0];
+      });
 
     return {
       overdue,
@@ -378,1143 +468,890 @@ export function HomePage({ onNavigate }: HomePageProps) {
       completed,
       gradedResults,
       performanceByCourse,
-      nextAssignment,
+      openTasks,
     };
-  }, [googleCourses, googleCoursework, currentStudent]);
+  }, [
+    googleCourses,
+    googleCoursework,
+    currentStudent,
+  ]);
 
   useEffect(() => {
     if (
       activePerformanceIndex >=
-      classroomData.performanceByCourse.length
+      classroomData.performanceByCourse
+        .length
     ) {
       setActivePerformanceIndex(0);
     }
   }, [
     activePerformanceIndex,
-    classroomData.performanceByCourse.length,
+    classroomData.performanceByCourse
+      .length,
   ]);
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-full">
-        <p
-          className="text-marquis-grey"
-          style={{
-            fontFamily: "Neurial Grotesk, sans-serif",
+      <div
+        className="flex min-h-[65vh] items-center justify-center"
+        style={{
+          background: "#F6F2E8",
+        }}
+      >
+        <motion.div
+          animate={{ rotate: 360 }}
+          transition={{
+            duration: 1,
+            repeat: Infinity,
+            ease: "linear",
           }}
-        >
-          Loading...
-        </p>
+          style={{
+            width: "34px",
+            height: "34px",
+            borderRadius: "50%",
+            border:
+              "4px solid rgba(0,0,0,0.08)",
+            borderTopColor: "#FFD500",
+          }}
+        />
       </div>
     );
   }
 
-  const currentPerformance =
-    classroomData.performanceByCourse[activePerformanceIndex];
+  const firstName =
+    currentStudent?.name?.split(" ")[0] ??
+    "there";
 
-  const latestResult = classroomData.gradedResults[0];
+  const currentPerformance =
+    classroomData.performanceByCourse[
+      activePerformanceIndex
+    ];
+
+  const latestResult =
+    classroomData.gradedResults[0];
+
+  const overallCompletion =
+    googleCoursework.length > 0
+      ? clampPercent(
+          (classroomData.completed.length /
+            googleCoursework.length) *
+            100
+        )
+      : 0;
+
+  const dueSoonCount =
+    classroomData.dueToday.length +
+    classroomData.dueNext7Days.length;
+
+  const latestGrade = latestResult
+    ? typeof latestResult.maxPoints ===
+        "number" &&
+      latestResult.maxPoints > 0
+      ? `${Math.round(
+          ((latestResult.submission
+            ?.assignedGrade ?? 0) /
+            latestResult.maxPoints) *
+            100
+        )}%`
+      : String(
+          latestResult.submission
+            ?.assignedGrade ?? "—"
+        )
+    : "—";
+
+  const nextClass =
+    upcomingClasses.length > 0
+      ? upcomingClasses[0]
+      : null;
+
+  const tasks =
+    classroomData.openTasks.slice(0, 3);
+
+  const quote =
+    overallCompletion >= 75
+      ? {
+          text: "Success is the sum of small efforts, repeated day in and day out.",
+          author: "Robert Collier",
+        }
+      : {
+          text: "The expert in anything was once a beginner.",
+          author: "Helen Hayes",
+        };
 
   return (
     <div
-      className="min-h-screen pb-24 relative overflow-hidden"
-      style={{ background: "#FFFFFF" }}
+      className="w-full overflow-x-hidden"
+      style={{
+        background: "linear-gradient(180deg, #F7F3EA 0%, #FBFAF6 48%, #F2ECE0 100%)",
+        color: "#0A0A0A",
+        fontFamily: "Inter, -apple-system, BlinkMacSystemFont, sans-serif",
+        paddingBottom: "18px",
+      }}
     >
-      {/* Warm Yellow Vignette at Top */}
-      <div
-        className="absolute inset-0 pointer-events-none"
+      {/* HERO — app-first, no imagery */}
+      <section
+        className="relative overflow-hidden"
         style={{
-          background:
-            "radial-gradient(circle at top right, rgba(255,213,0,0.25), transparent 60%)",
-          height: "50%",
+          minHeight: "285px",
+          margin: "0 14px",
+          borderRadius: "0 0 32px 32px",
+          background: "linear-gradient(135deg, #111111 0%, #191919 62%, #252525 100%)",
+          color: "#FFFFFF",
+          boxShadow: "0 22px 48px rgba(0,0,0,0.16)",
         }}
-      />
-
-      {/* Welcome Section */}
-      <div className="p-6 pt-8 pb-6 relative">
+      >
         <motion.div
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
+          aria-hidden="true"
+          animate={{ x: [0, 16, 0], y: [0, -10, 0], rotate: [0, 8, 0] }}
+          transition={{ duration: 8, repeat: Infinity, ease: "easeInOut" }}
+          style={{
+            position: "absolute",
+            width: "190px",
+            height: "190px",
+            borderRadius: "54px",
+            right: "-45px",
+            top: "-55px",
+            background: "#FFD500",
+            opacity: 0.96,
+            transform: "rotate(18deg)",
+          }}
+        />
+
+        <motion.div
+          aria-hidden="true"
+          animate={{ scale: [1, 1.08, 1], opacity: [0.16, 0.25, 0.16] }}
+          transition={{ duration: 5, repeat: Infinity, ease: "easeInOut" }}
+          style={{
+            position: "absolute",
+            width: "170px",
+            height: "170px",
+            borderRadius: "50%",
+            right: "70px",
+            bottom: "-100px",
+            background: "#FFD500",
+            filter: "blur(4px)",
+          }}
+        />
+
+        <div
+          className="relative z-10"
+          style={{ padding: "30px 22px 22px" }}
         >
-          <div className="flex items-start justify-between gap-4">
-            <div className="flex-1">
-              <h1
-                className="mt-0 mb-2"
-                style={{
-                  fontFamily: "Neurial Grotesk, sans-serif",
-                  fontWeight: 700,
-                  fontSize: "28px",
-                  color: "#000000",
-                  lineHeight: "1.2",
-                }}
-              >
-                Hey {currentStudent?.name?.split(" ")[0] || "there"}! 👋
-              </h1>
+          <motion.p
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.35 }}
+            style={{
+              margin: 0,
+              color: "rgba(255,255,255,0.66)",
+              fontSize: "12px",
+              fontWeight: 700,
+            }}
+          >
+            Good afternoon,
+          </motion.p>
 
-              <AnimatePresence mode="wait">
-                <motion.div
-                  key={currentQuoteIndex}
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -10 }}
-                  transition={{ duration: 0.5 }}
-                >
-                  <p
-                    className="mt-0 mb-1"
-                    style={{
-                      fontFamily: "Neurial Grotesk, sans-serif",
-                      fontSize: "14px",
-                      color: "#6E6E70",
-                      fontStyle: "italic",
-                      lineHeight: "1.4",
-                    }}
-                  >
-                    "{inspirationalQuotes[currentQuoteIndex].text}"
-                  </p>
+          <motion.h1
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, delay: 0.04 }}
+            style={{
+              margin: "3px 0 0",
+              maxWidth: "68%",
+              fontSize: "42px",
+              lineHeight: 0.96,
+              fontWeight: 900,
+              letterSpacing: "-0.055em",
+            }}
+          >
+            {firstName}
+          </motion.h1>
 
-                  <p
-                    className="mt-0 mb-0"
-                    style={{
-                      fontFamily: "Neurial Grotesk, sans-serif",
-                      fontSize: "13px",
-                      color: "#999",
-                      fontWeight: 600,
-                    }}
-                  >
-                    — {inspirationalQuotes[currentQuoteIndex].author}
-                  </p>
-                </motion.div>
-              </AnimatePresence>
-            </div>
+          <motion.p
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.16 }}
+            style={{
+              margin: "15px 0 0",
+              maxWidth: "215px",
+              color: "rgba(255,255,255,0.7)",
+              fontSize: "10px",
+              lineHeight: 1.5,
+              fontWeight: 600,
+            }}
+          >
+            {tasks.length > 0
+              ? `You have ${tasks.length} priority ${tasks.length === 1 ? "task" : "tasks"} waiting. Let's make a start.`
+              : "You're all clear. A good time to get ahead."}
+          </motion.p>
 
-            {/* Same visual badge as before, but now real live data */}
-            <motion.div
-              className="flex flex-col items-center"
-              whileHover={{ scale: 1.05 }}
+          <div className="flex gap-2" style={{ marginTop: "19px" }}>
+            <motion.button
+              type="button"
+              whileHover={{ y: -2 }}
+              whileTap={{ scale: 0.96 }}
+              onClick={() => onNavigate(tasks.length > 0 ? "study" : "progress")}
+              style={{
+                border: "none",
+                borderRadius: "13px",
+                padding: "10px 13px",
+                background: "#FFD500",
+                color: "#080808",
+                fontSize: "9px",
+                fontWeight: 900,
+                cursor: "pointer",
+                boxShadow: "0 8px 20px rgba(255,213,0,0.18)",
+              }}
+            >
+              {tasks.length > 0 ? "View priorities" : "View progress"}
+            </motion.button>
+
+            <motion.button
+              type="button"
+              whileHover={{ y: -2 }}
+              whileTap={{ scale: 0.96 }}
+              onClick={() => onNavigate("bookings")}
+              style={{
+                border: "1px solid rgba(255,255,255,0.16)",
+                borderRadius: "13px",
+                padding: "10px 13px",
+                background: "rgba(255,255,255,0.07)",
+                color: "#FFFFFF",
+                fontSize: "9px",
+                fontWeight: 800,
+                cursor: "pointer",
+              }}
+            >
+              My classes
+            </motion.button>
+          </div>
+        </div>
+
+        <motion.button
+          type="button"
+          whileHover={{ scale: 1.03, rotate: -1 }}
+          whileTap={{ scale: 0.96 }}
+          onClick={() => onNavigate("study")}
+          style={{
+            position: "absolute",
+            zIndex: 12,
+            right: "17px",
+            bottom: "19px",
+            width: "118px",
+            minHeight: "78px",
+            padding: "12px",
+            border: "1px solid rgba(255,255,255,0.25)",
+            borderRadius: "20px",
+            background: "rgba(255,255,255,0.12)",
+            backdropFilter: "blur(14px)",
+            WebkitBackdropFilter: "blur(14px)",
+            color: "#FFFFFF",
+            textAlign: "left",
+            cursor: "pointer",
+          }}
+        >
+          <span style={{ display: "block", color: "#FFD500", fontSize: "21px", fontWeight: 900 }}>
+            {dueSoonCount}
+          </span>
+          <span style={{ display: "block", marginTop: "2px", fontSize: "8px", fontWeight: 750 }}>
+            due in the next 7 days
+          </span>
+          <ArrowUpRight
+            className="h-4 w-4"
+            style={{ position: "absolute", right: "10px", top: "10px" }}
+          />
+        </motion.button>
+      </section>
+
+      {/* STATS — explicitly forced into one horizontal row */}
+      <section
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+          gap: "8px",
+          margin: "14px 14px 0",
+        }}
+      >
+        {[
+          { icon: Calendar, value: dueSoonCount, label: "Due soon", tab: "study" },
+          { icon: CheckCircle2, value: `${overallCompletion}%`, label: "Complete", tab: "progress" },
+          { icon: BookOpen, value: googleCourses.length, label: "Classes", tab: "bookings" },
+          { icon: Target, value: latestGrade, label: "Latest", tab: "progress" },
+        ].map((item, index) => {
+          const Icon = item.icon;
+          return (
+            <motion.button
+              key={item.label}
+              type="button"
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.06 * index }}
+              whileHover={{ y: -4, scale: 1.015 }}
               whileTap={{ scale: 0.95 }}
-              onClick={() => onNavigate("study")}
+              onClick={() => onNavigate(item.tab)}
+              style={{
+                minWidth: 0,
+                minHeight: "92px",
+                padding: "11px 4px",
+                border: "1px solid rgba(0,0,0,0.055)",
+                borderRadius: "20px",
+                background: "#FFFFFF",
+                boxShadow: "0 10px 25px rgba(0,0,0,0.055)",
+                cursor: "pointer",
+              }}
             >
               <div
-                className="relative w-16 h-16 rounded-2xl flex items-center justify-center cursor-pointer"
+                className="mx-auto flex items-center justify-center"
                 style={{
-                  background: "#FFD500",
-                  boxShadow:
-                    "0px 8px 16px rgba(255,213,0,0.3)",
+                  width: "31px",
+                  height: "31px",
+                  borderRadius: "11px",
+                  background: index === 0 ? "#FFD500" : "#F2F0EA",
                 }}
               >
-                <Zap
-                  className="w-8 h-8"
-                  style={{
-                    color: "#000000",
-                    strokeWidth: 2.5,
-                  }}
-                />
+                <Icon className="h-4 w-4" />
+              </div>
+              <strong
+                style={{
+                  display: "block",
+                  marginTop: "8px",
+                  fontSize: "15px",
+                  lineHeight: 1,
+                  fontWeight: 900,
+                  letterSpacing: "-0.03em",
+                }}
+              >
+                {item.value}
+              </strong>
+              <span
+                style={{
+                  display: "block",
+                  marginTop: "4px",
+                  color: "#77716A",
+                  fontSize: "7px",
+                  fontWeight: 750,
+                }}
+              >
+                {item.label}
+              </span>
+            </motion.button>
+          );
+        })}
+      </section>
 
-                <div
-                  className="absolute -top-1 -right-1 min-w-6 h-6 px-1 rounded-full flex items-center justify-center"
+      <div style={{ padding: "15px 14px 0" }}>
+        {!googleProviderToken && (
+          <motion.section
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            style={{
+              marginBottom: "14px",
+              padding: "14px",
+              borderRadius: "22px",
+              background: "#FFFFFF",
+              border: "1px solid rgba(0,0,0,0.06)",
+              boxShadow: "0 10px 24px rgba(0,0,0,0.05)",
+            }}
+          >
+            <div className="flex items-center gap-3">
+              <div
+                className="flex shrink-0 items-center justify-center"
+                style={{
+                  width: "39px",
+                  height: "39px",
+                  borderRadius: "13px",
+                  background: "#FFD500",
+                }}
+              >
+                <GraduationCap className="h-5 w-5" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p style={{ margin: 0, fontSize: "12px", fontWeight: 850 }}>
+                  {googleIdentityLinked ? "Reconnect Classroom" : "Connect Google Classroom"}
+                </p>
+                <p style={{ margin: "3px 0 0", color: "#77716A", fontSize: "8px" }}>
+                  Bring your tasks, grades and deadlines into one place.
+                </p>
+              </div>
+              <Button
+                type="button"
+                disabled={isConnectingGoogle}
+                onClick={async () => {
+                  try {
+                    await connectGoogleClassroom();
+                  } catch (error) {
+                    console.error("Google Classroom connection failed:", error);
+                  }
+                }}
+                className="border-0"
+                style={{
+                  height: "35px",
+                  borderRadius: "11px",
+                  background: "#111111",
+                  color: "#FFFFFF",
+                  padding: "0 11px",
+                  fontSize: "8px",
+                  fontWeight: 850,
+                }}
+              >
+                {isConnectingGoogle ? "Connecting..." : "Connect"}
+              </Button>
+            </div>
+          </motion.section>
+        )}
+
+        {/* PRIORITIES — clean task UI, no image */}
+        <section
+          style={{
+            marginBottom: "14px",
+            padding: "17px",
+            borderRadius: "27px",
+            background: "#FFFFFF",
+            border: "1px solid rgba(0,0,0,0.055)",
+            boxShadow: "0 14px 30px rgba(0,0,0,0.065)",
+          }}
+        >
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <motion.div
+                whileHover={{ rotate: 8, scale: 1.06 }}
+                className="flex shrink-0 items-center justify-center"
+                style={{
+                  width: "39px",
+                  height: "39px",
+                  borderRadius: "14px",
+                  background: "#FFD500",
+                }}
+              >
+                <CheckCircle2 className="h-5 w-5" />
+              </motion.div>
+              <div>
+                <h2 style={{ margin: 0, fontSize: "17px", fontWeight: 900, letterSpacing: "-0.025em" }}>
+                  Today's Priorities
+                </h2>
+                <p style={{ margin: "3px 0 0", color: "#77716A", fontSize: "8px" }}>
+                  Most urgent first · {tasks.length} showing
+                </p>
+              </div>
+            </div>
+            <motion.button
+              type="button"
+              whileTap={{ scale: 0.95 }}
+              onClick={() => onNavigate("study")}
+              style={{
+                border: "none",
+                borderRadius: "999px",
+                background: "#F4F2EC",
+                padding: "7px 9px",
+                fontSize: "7.5px",
+                fontWeight: 850,
+                cursor: "pointer",
+              }}
+            >
+              View all
+            </motion.button>
+          </div>
+
+          <div style={{ marginTop: "13px" }}>
+            {tasks.length > 0 ? (
+              tasks.map((task: ClassroomWorkItem, index: number) => (
+                <motion.button
+                  key={task.id}
+                  type="button"
+                  initial={{ opacity: 0, x: -8 }}
+                  whileInView={{ opacity: 1, x: 0 }}
+                  viewport={{ once: true }}
+                  transition={{ delay: index * 0.05 }}
+                  whileHover={{ x: 4, backgroundColor: "#FAF8F2" }}
+                  whileTap={{ scale: 0.99 }}
+                  onClick={() =>
+                    task.alternateLink
+                      ? window.open(task.alternateLink, "_blank", "noopener,noreferrer")
+                      : onNavigate("study")
+                  }
+                  className="flex w-full items-center gap-3"
                   style={{
-                    background: "#000000",
-                    color: "#FFD500",
-                    fontSize: "10px",
-                    fontWeight: 700,
+                    minHeight: "62px",
+                    padding: "9px 8px",
+                    border: "none",
+                    borderTop: index === 0 ? "1px solid #EEEAE2" : "none",
+                    borderBottom: "1px solid #EEEAE2",
+                    background: "transparent",
+                    textAlign: "left",
+                    cursor: "pointer",
+                    borderRadius: index === 0 ? "13px 13px 0 0" : index === tasks.length - 1 ? "0 0 13px 13px" : "0",
                   }}
                 >
-                  {classroomData.dueToday.length}
-                </div>
-              </div>
-
-              <p
-                className="mt-2 text-xs text-center"
-                style={{
-                  fontFamily: "Neurial Grotesk, sans-serif",
-                  fontWeight: 600,
-                  color: "#6E6E70",
-                }}
-              >
-                Due Today
-              </p>
-            </motion.div>
-          </div>
-        </motion.div>
-      </div>
-
-      <div className="px-6 space-y-6 relative">
-        {/* Weekly Performance - original visual style, real Classroom data */}
-        <motion.div
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ delay: 0.1 }}
-          className="p-6 rounded-3xl"
-          style={{ background: "#FAFAFA" }}
-        >
-          <div className="mb-5 flex items-center justify-between">
-            <div>
-              <h2
-                className="mb-1 flex items-center gap-2"
-                style={{
-                  fontFamily: "Neurial Grotesk, sans-serif",
-                  fontWeight: 700,
-                  fontSize: "22px",
-                  color: "#000000",
-                }}
-              >
-                Weekly Performance
-                <ArrowUpRight
-                  className="w-5 h-5"
-                  style={{ color: "#FFD500" }}
-                />
-              </h2>
-
-              <p
-                className="text-sm"
-                style={{
-                  fontFamily: "Neurial Grotesk, sans-serif",
-                  color: "#6E6E70",
-                }}
-              >
-                Live from Google Classroom
-              </p>
-            </div>
-
-            {classroomData.performanceByCourse.length > 1 && (
-              <div className="flex gap-1.5">
-                {classroomData.performanceByCourse.map(
-                  (_, index) => (
-                    <button
-                      key={index}
-                      onClick={() =>
-                        setActivePerformanceIndex(index)
-                      }
-                      className={`h-1.5 rounded-full transition-all ${
-                        index === activePerformanceIndex
-                          ? "w-8"
-                          : "w-1.5"
-                      }`}
+                  <div
+                    className="flex shrink-0 items-center justify-center"
+                    style={{
+                      width: "34px",
+                      height: "34px",
+                      borderRadius: "12px",
+                      background: index === 0 ? "#FFF0F0" : "#FFF8D5",
+                      color: index === 0 ? "#D94848" : "#111111",
+                    }}
+                  >
+                    {index === 0 ? <AlertCircle className="h-4 w-4" /> : <FileText className="h-4 w-4" />}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p
                       style={{
-                        background:
-                          index === activePerformanceIndex
-                            ? "#FFD500"
-                            : "#E6E6E6",
+                        margin: 0,
+                        fontSize: "9.5px",
+                        fontWeight: 850,
+                        whiteSpace: "nowrap",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
                       }}
-                    />
-                  )
-                )}
-              </div>
+                    >
+                      {task.title}
+                    </p>
+                    <p
+                      style={{
+                        margin: "3px 0 0",
+                        color: "#77716A",
+                        fontSize: "7.5px",
+                        fontWeight: 650,
+                        whiteSpace: "nowrap",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                      }}
+                    >
+                      {formatDueLabel(task)} · {task.courseName}
+                    </p>
+                  </div>
+                  <ChevronRight className="h-4 w-4 shrink-0" />
+                </motion.button>
+              ))
+            ) : (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                style={{
+                  marginTop: "12px",
+                  padding: "18px",
+                  borderRadius: "17px",
+                  background: "#F7F5EF",
+                  color: "#68635C",
+                  fontSize: "9px",
+                  textAlign: "center",
+                }}
+              >
+                No urgent tasks right now. You're clear here.
+              </motion.div>
             )}
           </div>
+        </section>
 
-          {!googleProviderToken ? (
-            <Card
-              className="border-0 p-6"
+        {/* PROGRESS */}
+        <section
+          style={{
+            marginBottom: "14px",
+            padding: "17px",
+            borderRadius: "27px",
+            background: "linear-gradient(145deg, #181818, #070707)",
+            color: "#FFFFFF",
+            boxShadow: "0 16px 34px rgba(0,0,0,0.15)",
+          }}
+        >
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div
+                className="flex shrink-0 items-center justify-center"
+                style={{ width: "39px", height: "39px", borderRadius: "14px", background: "#FFD500", color: "#000" }}
+              >
+                <TrendingUp className="h-5 w-5" />
+              </div>
+              <div>
+                <h2 style={{ margin: 0, fontSize: "17px", fontWeight: 900 }}>Your Progress</h2>
+                <p style={{ margin: "3px 0 0", color: "rgba(255,255,255,0.5)", fontSize: "8px" }}>
+                  {currentPerformance ? currentPerformance.subject : "Live Classroom completion"}
+                </p>
+              </div>
+            </div>
+            <motion.button
+              type="button"
+              whileHover={{ y: -2 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={() => onNavigate("progress")}
               style={{
-                borderRadius: "20px",
-                boxShadow:
-                  "0px 12px 28px rgba(0, 0, 0, 0.06)",
-                background: "#FFFFFF",
+                border: "1px solid rgba(255,255,255,0.12)",
+                borderRadius: "999px",
+                background: "rgba(255,255,255,0.07)",
+                color: "#FFFFFF",
+                padding: "7px 9px",
+                fontSize: "7.5px",
+                fontWeight: 850,
+                cursor: "pointer",
               }}
             >
-              <p
-                style={{
-                  margin: 0,
-                  color: "#6E6E70",
-                  fontSize: "14px",
-                }}
-              >
-                Sign in with Google to see your live performance.
-              </p>
-            </Card>
-          ) : classroomLoading ? (
-            <Card
-              className="border-0 p-6"
-              style={{
-                borderRadius: "20px",
-                boxShadow:
-                  "0px 12px 28px rgba(0, 0, 0, 0.06)",
-                background: "#FFFFFF",
-              }}
-            >
-              <p
-                style={{
-                  margin: 0,
-                  color: "#6E6E70",
-                  fontSize: "14px",
-                }}
-              >
-                Loading Classroom performance…
-              </p>
-            </Card>
+              Details
+            </motion.button>
+          </div>
+
+          {classroomLoading ? (
+            <p style={{ margin: "16px 0 0", color: "rgba(255,255,255,0.55)", fontSize: "9px" }}>
+              Loading Classroom performance…
+            </p>
           ) : classroomError ? (
-            <Card
-              className="border-0 p-6"
-              style={{
-                borderRadius: "20px",
-                boxShadow:
-                  "0px 12px 28px rgba(0, 0, 0, 0.06)",
-                background: "#FFF4F4",
-              }}
-            >
-              <p
-                style={{
-                  margin: 0,
-                  color: "#B91C1C",
-                  fontSize: "14px",
-                }}
-              >
-                {classroomError}
-              </p>
-            </Card>
+            <div style={{ marginTop: "14px", padding: "10px", borderRadius: "13px", background: "#3A1717", color: "#FFD0D0", fontSize: "8.5px" }}>
+              {classroomError}
+            </div>
           ) : currentPerformance ? (
             <AnimatePresence mode="wait">
               <motion.div
                 key={currentPerformance.id}
-                initial={{ opacity: 0, x: 20 }}
+                initial={{ opacity: 0, x: 8 }}
                 animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
-                transition={{ duration: 0.3 }}
+                exit={{ opacity: 0, x: -8 }}
+                style={{ marginTop: "16px" }}
               >
-                <Card
-                  className="border-0 p-6"
-                  style={{
-                    borderRadius: "20px",
-                    boxShadow:
-                      "0px 12px 28px rgba(0, 0, 0, 0.06)",
-                    background: "#FFFFFF",
-                  }}
-                >
-                  <div className="flex items-start justify-between mb-5">
-                    <div>
-                      <h3
-                        className="mb-1 flex items-center gap-2"
-                        style={{
-                          fontFamily:
-                            "Neurial Grotesk, sans-serif",
-                          fontWeight: 700,
-                          fontSize: "20px",
-                          color: "#000000",
-                        }}
-                      >
-                        {currentPerformance.subject}
-                        <span style={{ fontSize: "18px" }}>
-                          📚
-                        </span>
-                      </h3>
-
-                      {currentPerformance.yearLabel && (
-                        <p
-                          className="text-sm"
-                          style={{
-                            fontFamily:
-                              "Neurial Grotesk, sans-serif",
-                            color: "#6E6E70",
-                          }}
-                        >
-                          {String(
-                            currentPerformance.yearLabel
-                          ).startsWith("Year")
-                            ? currentPerformance.yearLabel
-                            : `Year ${currentPerformance.yearLabel}`}
-                        </p>
-                      )}
+                {currentPerformance.metrics.map((metric: CoursePerformance["metrics"][number], index: number) => (
+                  <div
+                    key={metric.name}
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "65px 1fr 31px",
+                      alignItems: "center",
+                      gap: "8px",
+                      marginTop: index === 0 ? 0 : "11px",
+                    }}
+                  >
+                    <span style={{ fontSize: "8px", fontWeight: 700, color: "rgba(255,255,255,0.7)" }}>
+                      {metric.name}
+                    </span>
+                    <div style={{ height: "8px", borderRadius: "999px", background: "rgba(255,255,255,0.10)", overflow: "hidden" }}>
+                      <motion.div
+                        initial={{ width: 0 }}
+                        whileInView={{ width: `${metric.progress}%` }}
+                        viewport={{ once: true }}
+                        transition={{ duration: 0.85 }}
+                        style={{ height: "100%", borderRadius: "999px", background: "#FFD500" }}
+                      />
                     </div>
-
-                    <Badge
-                      style={{
-                        background: "#FFF8D8",
-                        color: "#000000",
-                        border: "1px solid #FFD50055",
-                      }}
-                    >
-                      Live
-                    </Badge>
+                    <strong style={{ fontSize: "8px", textAlign: "right" }}>{metric.progress}%</strong>
                   </div>
+                ))}
 
-                  <div className="flex items-center gap-6">
-                    {/* Original score-circle graphic, now completion rate */}
-                    <div className="relative flex-shrink-0">
-                      <div
-                        className="absolute inset-0 rounded-full"
+                {classroomData.performanceByCourse.length > 1 && (
+                  <div className="flex justify-center gap-1" style={{ marginTop: "14px" }}>
+                    {classroomData.performanceByCourse.map((_course: CoursePerformance, index: number) => (
+                      <motion.button
+                        type="button"
+                        key={index}
+                        whileHover={{ scale: 1.2 }}
+                        aria-label={`Show course ${index + 1}`}
+                        onClick={() => setActivePerformanceIndex(index)}
                         style={{
-                          background: "#FFD500",
-                          filter: "blur(12px)",
-                          opacity: 0.3,
-                          transform: "scale(0.9)",
+                          width: index === activePerformanceIndex ? "18px" : "5px",
+                          height: "5px",
+                          padding: 0,
+                          border: "none",
+                          borderRadius: "999px",
+                          background: index === activePerformanceIndex ? "#FFD500" : "rgba(255,255,255,0.22)",
+                          cursor: "pointer",
                         }}
                       />
-
-                      <div className="relative w-24 h-24">
-                        <svg className="w-24 h-24 -rotate-90">
-                          <circle
-                            cx="48"
-                            cy="48"
-                            r="40"
-                            stroke="#E8E8E8"
-                            strokeWidth="6"
-                            fill="none"
-                          />
-
-                          <circle
-                            cx="48"
-                            cy="48"
-                            r="40"
-                            stroke="#FFD500"
-                            strokeWidth="6"
-                            fill="none"
-                            strokeDasharray={`${2 * Math.PI * 40}`}
-                            strokeDashoffset={`${
-                              2 *
-                              Math.PI *
-                              40 *
-                              (1 -
-                                currentPerformance.average /
-                                  100)
-                            }`}
-                            strokeLinecap="round"
-                            style={{
-                              filter:
-                                "drop-shadow(0px 2px 4px rgba(255,213,0,0.3))",
-                            }}
-                          />
-                        </svg>
-
-                        <div className="absolute inset-0 flex flex-col items-center justify-center">
-                          <span
-                            style={{
-                              fontFamily:
-                                "Neurial Grotesk, sans-serif",
-                              fontWeight: 700,
-                              fontSize: "26px",
-                              color: "#000000",
-                            }}
-                          >
-                            {currentPerformance.average}%
-                          </span>
-
-                          <span
-                            className="text-xs"
-                            style={{
-                              fontFamily:
-                                "Neurial Grotesk, sans-serif",
-                              color: "#6E6E70",
-                              marginTop: "-2px",
-                            }}
-                          >
-                            Complete
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Original animated progress bars, now real workload */}
-                    <div className="flex-1 space-y-4">
-                      {currentPerformance.metrics.map(
-                        (metric, index) => (
-                          <motion.div
-                            key={metric.name}
-                            initial={{
-                              opacity: 0,
-                              x: 20,
-                            }}
-                            animate={{
-                              opacity: 1,
-                              x: 0,
-                            }}
-                            transition={{
-                              delay:
-                                0.1 + index * 0.1,
-                            }}
-                          >
-                            <div className="flex items-center justify-between mb-2">
-                              <p
-                                className="text-sm flex items-center gap-1.5"
-                                style={{
-                                  fontFamily:
-                                    "Neurial Grotesk, sans-serif",
-                                  fontWeight: 600,
-                                  color: "#000000",
-                                }}
-                              >
-                                <span>{metric.icon}</span>
-                                {metric.name}
-                              </p>
-
-                              <p
-                                className="text-sm"
-                                style={{
-                                  fontFamily:
-                                    "Neurial Grotesk, sans-serif",
-                                  fontWeight: 700,
-                                  color:
-                                    metric.name ===
-                                    "Completed"
-                                      ? "#B89500"
-                                      : "#6E6E70",
-                                }}
-                              >
-                                {metric.progress}%
-                              </p>
-                            </div>
-
-                            <div
-                              className="h-2.5 rounded-full overflow-hidden"
-                              style={{
-                                background: "#E8E8E8",
-                              }}
-                            >
-                              <motion.div
-                                className="h-full rounded-full"
-                                initial={{ width: 0 }}
-                                animate={{
-                                  width: `${metric.progress}%`,
-                                }}
-                                transition={{
-                                  duration: 1,
-                                  delay:
-                                    0.2 +
-                                    index * 0.1,
-                                  ease: "easeOut",
-                                }}
-                                style={{
-                                  background:
-                                    metric.name ===
-                                    "Completed"
-                                      ? "#FFD500"
-                                      : "#000000",
-                                }}
-                              />
-                            </div>
-                          </motion.div>
-                        )
-                      )}
-                    </div>
+                    ))}
                   </div>
-                </Card>
+                )}
               </motion.div>
             </AnimatePresence>
           ) : (
-            <Card
-              className="border-0 p-6"
-              style={{
-                borderRadius: "20px",
-                boxShadow:
-                  "0px 12px 28px rgba(0, 0, 0, 0.06)",
-                background: "#FFFFFF",
-              }}
-            >
-              <p
-                style={{
-                  margin: 0,
-                  color: "#6E6E70",
-                  fontSize: "14px",
-                }}
-              >
-                No current Classroom work found.
-              </p>
-            </Card>
+            <p style={{ margin: "15px 0 0", color: "rgba(255,255,255,0.55)", fontSize: "9px" }}>
+              {googleProviderToken ? "No current Classroom work found." : "Connect Classroom to see progress."}
+            </p>
           )}
-        </motion.div>
+        </section>
 
-        {/* Live Classroom snapshot, still matching original rounded style */}
-        <motion.div
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ delay: 0.15 }}
-          className="p-6 rounded-3xl"
-          style={{ background: "#FAFAFA" }}
+        {/* STUDY TOOLS — actual app controls, no decorative image */}
+        <section
+          style={{
+            marginBottom: "14px",
+            padding: "17px",
+            borderRadius: "27px",
+            background: "#FFFFFF",
+            border: "1px solid rgba(0,0,0,0.055)",
+            boxShadow: "0 14px 30px rgba(0,0,0,0.06)",
+          }}
         >
-          <div className="mb-5 flex items-start justify-between gap-4">
-            <div>
-              <h2
-                className="mb-1 flex items-center gap-2"
-                style={{
-                  fontFamily: "Neurial Grotesk, sans-serif",
-                  fontWeight: 700,
-                  fontSize: "22px",
-                  color: "#000000",
-                }}
-              >
-                Classroom Snapshot
-                <BookOpen
-                  className="w-5 h-5"
-                  style={{ color: "#FFD500" }}
-                />
-              </h2>
-
-              <p
-                className="text-sm"
-                style={{
-                  fontFamily: "Neurial Grotesk, sans-serif",
-                  color: "#6E6E70",
-                }}
-              >
-                What needs your attention
-              </p>
-            </div>
-
-            <Badge
-              style={{
-                background: "#FFF8D8",
-                color: "#000000",
-                border: "1px solid #FFD50055",
-              }}
-            >
-              {googleCourses.length} Classes
-            </Badge>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            {[
-              {
-                value: classroomData.overdue.length,
-                label: "Overdue",
-                background: "#FFF0F0",
-                color: "#B91C1C",
-              },
-              {
-                value: classroomData.dueToday.length,
-                label: "Due Today",
-                background: "#FFF8D8",
-                color: "#8A6A00",
-              },
-              {
-                value: classroomData.dueNext7Days.length,
-                label: "Next 7 Days",
-                background: "#FFFFFF",
-                color: "#000000",
-              },
-              {
-                value: classroomData.completed.length,
-                label: "Completed",
-                background: "#ECFDF3",
-                color: "#166534",
-              },
-            ].map((item) => (
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
               <motion.div
-                key={item.label}
-                whileHover={{ y: -2 }}
-                style={{
-                  padding: "16px",
-                  borderRadius: "18px",
-                  background: item.background,
-                  boxShadow:
-                    "0px 8px 20px rgba(0,0,0,0.04)",
-                }}
+                whileHover={{ rotate: -8 }}
+                className="flex items-center justify-center"
+                style={{ width: "39px", height: "39px", borderRadius: "14px", background: "#FFD500" }}
               >
-                <p
-                  style={{
-                    fontFamily:
-                      "Neurial Grotesk, sans-serif",
-                    fontSize: "25px",
-                    fontWeight: 700,
-                    color: item.color,
-                    margin: 0,
-                  }}
-                >
-                  {item.value}
-                </p>
-
-                <p
-                  style={{
-                    fontFamily:
-                      "Neurial Grotesk, sans-serif",
-                    fontSize: "12px",
-                    fontWeight: 600,
-                    color: item.color,
-                    margin: "4px 0 0",
-                  }}
-                >
-                  {item.label}
-                </p>
+                <Lightbulb className="h-5 w-5" />
               </motion.div>
-            ))}
+              <div>
+                <h2 style={{ margin: 0, fontSize: "17px", fontWeight: 900 }}>Study Tools</h2>
+                <p style={{ margin: "3px 0 0", color: "#77716A", fontSize: "8px" }}>
+                  Pick a tool and get started.
+                </p>
+              </div>
+            </div>
           </div>
 
-          <Button
-            type="button"
-            onClick={() => onNavigate("study")}
-            className="w-full rounded-xl border-0 mt-4"
+          <div
             style={{
-              background: "#000000",
-              color: "#FFFFFF",
-              fontFamily: "Neurial Grotesk, sans-serif",
-              fontWeight: 700,
-              height: "44px",
+              display: "grid",
+              gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+              gap: "8px",
+              marginTop: "14px",
             }}
           >
-            View Study Dashboard
-            <ArrowUpRight className="w-4 h-4 ml-2" />
-          </Button>
-        </motion.div>
-
-        {/* Latest real Google Classroom result */}
-        <motion.div
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ delay: 0.18 }}
-          className="p-6 rounded-3xl"
-          style={{ background: "#FAFAFA" }}
-        >
-          <div className="mb-5">
-            <h2
-              className="mb-1 flex items-center gap-2"
-              style={{
-                fontFamily: "Neurial Grotesk, sans-serif",
-                fontWeight: 700,
-                fontSize: "22px",
-                color: "#000000",
-              }}
-            >
-              Recent Result
-              <TrendingUp
-                className="w-5 h-5"
-                style={{ color: "#FFD500" }}
-              />
-            </h2>
-
-            <p
-              className="text-sm"
-              style={{
-                fontFamily: "Neurial Grotesk, sans-serif",
-                color: "#6E6E70",
-              }}
-            >
-              Latest grade returned in Classroom
-            </p>
-          </div>
-
-          {latestResult ? (
-            <Card
-              className="border-0 p-5"
-              style={{
-                borderRadius: "20px",
-                boxShadow:
-                  "0px 12px 28px rgba(0, 0, 0, 0.06)",
-                background: "#FFFFFF",
-              }}
-            >
-              <div className="flex items-center justify-between gap-4">
-                <div className="min-w-0">
-                  <p
-                    style={{
-                      fontFamily:
-                        "Neurial Grotesk, sans-serif",
-                      fontSize: "12px",
-                      fontWeight: 600,
-                      color: "#999999",
-                      margin: "0 0 5px",
-                    }}
-                  >
-                    {latestResult.courseName}
-                  </p>
-
-                  <h3
-                    style={{
-                      fontFamily:
-                        "Neurial Grotesk, sans-serif",
-                      fontWeight: 700,
-                      fontSize: "17px",
-                      color: "#000000",
-                      margin: 0,
-                    }}
-                  >
-                    {latestResult.title}
-                  </h3>
-                </div>
-
-                <div
-                  className="w-16 h-16 rounded-full flex items-center justify-center flex-shrink-0"
+            {[
+              { icon: Clock3, label: "Pomodoro" },
+              { icon: NotebookTabs, label: "Flashcards" },
+              { icon: FileText, label: "Notes" },
+              { icon: BookOpen, label: "Past Papers" },
+            ].map((tool, index) => {
+              const Icon = tool.icon;
+              return (
+                <motion.button
+                  type="button"
+                  key={tool.label}
+                  whileHover={{ y: -4, backgroundColor: "#FFF8D5" }}
+                  whileTap={{ scale: 0.94 }}
+                  onClick={() => onNavigate("study")}
                   style={{
-                    background: "#FFD500",
-                    boxShadow:
-                      "0px 8px 18px rgba(255,213,0,0.25)",
+                    minWidth: 0,
+                    minHeight: "76px",
+                    borderRadius: "17px",
+                    border: "1px solid #EDE9E1",
+                    background: index === 0 ? "#FFF9DB" : "#F8F6F1",
+                    color: "#111111",
+                    cursor: "pointer",
                   }}
                 >
-                  <span
-                    style={{
-                      fontFamily:
-                        "Neurial Grotesk, sans-serif",
-                      fontSize: "16px",
-                      fontWeight: 700,
-                      color: "#000000",
-                    }}
-                  >
-                    {latestResult.submission?.assignedGrade}
-                    {typeof latestResult.maxPoints === "number"
-                      ? `/${latestResult.maxPoints}`
-                      : ""}
+                  <Icon className="mx-auto h-5 w-5" />
+                  <span style={{ display: "block", marginTop: "7px", fontSize: "7px", fontWeight: 800 }}>
+                    {tool.label}
                   </span>
-                </div>
-              </div>
-            </Card>
-          ) : (
-            <Card
-              className="border-0 p-5"
-              style={{
-                borderRadius: "20px",
-                boxShadow:
-                  "0px 12px 28px rgba(0, 0, 0, 0.06)",
-                background: "#FFFFFF",
-              }}
-            >
-              <p
-                style={{
-                  margin: 0,
-                  fontFamily:
-                    "Neurial Grotesk, sans-serif",
-                  fontSize: "14px",
-                  color: "#6E6E70",
-                }}
-              >
-                No graded Classroom results available yet.
-              </p>
-            </Card>
-          )}
-        </motion.div>
-
-        {/* Next Class - preserve original visual style */}
-        <motion.div
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ delay: 0.2 }}
-          className="p-6 rounded-3xl"
-          style={{ background: "#FAFAFA" }}
-        >
-          <div className="mb-5">
-            <h2
-              className="mb-1 flex items-center gap-2"
-              style={{
-                fontFamily: "Neurial Grotesk, sans-serif",
-                fontWeight: 700,
-                fontSize: "22px",
-                color: "#000000",
-              }}
-            >
-              Coming Up Next
-              <Clock
-                className="w-5 h-5"
-                style={{ color: "#FFD500" }}
-              />
-            </h2>
-
-            <p
-              className="text-sm"
-              style={{
-                fontFamily: "Neurial Grotesk, sans-serif",
-                color: "#6E6E70",
-              }}
-            >
-              Your next session
-            </p>
+                </motion.button>
+              );
+            })}
           </div>
+        </section>
 
-          {upcomingClasses.length > 0 ? (
-            <motion.div
-              onClick={() => onNavigate("bookings")}
-              className="cursor-pointer"
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
+        {/* NEXT CLASS */}
+        <motion.button
+          type="button"
+          whileHover={{ y: -3 }}
+          whileTap={{ scale: 0.985 }}
+          onClick={() => onNavigate("bookings")}
+          style={{
+            width: "100%",
+            marginBottom: "14px",
+            padding: "14px",
+            borderRadius: "23px",
+            border: "1px solid rgba(0,0,0,0.055)",
+            background: "#FFFFFF",
+            boxShadow: "0 12px 28px rgba(0,0,0,0.055)",
+            textAlign: "left",
+            cursor: "pointer",
+          }}
+        >
+          <div className="flex items-center gap-3">
+            <div
+              className="flex shrink-0 items-center justify-center"
+              style={{ width: "39px", height: "39px", borderRadius: "14px", background: "#FFD500" }}
             >
-              <Card
-                className="border-0 p-5 overflow-hidden"
-                style={{
-                  borderRadius: "20px",
-                  boxShadow:
-                    "0px 12px 28px rgba(0, 0, 0, 0.06)",
-                  background: upcomingClasses[0].subject.includes(
-                    "Mathematics"
-                  )
-                    ? "linear-gradient(135deg, #FFD500 0%, #FFC700 100%)"
-                    : "#000000",
-                }}
-              >
-                <div className="flex items-center gap-4">
-                  <div
-                    className="w-14 h-14 rounded-2xl flex items-center justify-center flex-shrink-0"
-                    style={{
-                      background:
-                        upcomingClasses[0].subject.includes(
-                          "Mathematics"
-                        )
-                          ? "rgba(0,0,0,0.1)"
-                          : "rgba(255,213,0,0.2)",
-                      backdropFilter: "blur(10px)",
-                    }}
-                  >
-                    <BookOpen
-                      className="w-7 h-7"
-                      style={{
-                        color:
-                          upcomingClasses[0].subject.includes(
-                            "Mathematics"
-                          )
-                            ? "#000000"
-                            : "#FFD500",
-                        strokeWidth: 2.5,
-                      }}
-                    />
-                  </div>
-
-                  <div className="flex-1">
-                    <h3
-                      className="mb-1"
-                      style={{
-                        fontFamily:
-                          "Neurial Grotesk, sans-serif",
-                        fontWeight: 700,
-                        fontSize: "18px",
-                        color:
-                          upcomingClasses[0].subject.includes(
-                            "Mathematics"
-                          )
-                            ? "#000000"
-                            : "#FFFFFF",
-                      }}
-                    >
-                      {upcomingClasses[0].subject}
-                    </h3>
-
-                    <p
-                      className="text-sm"
-                      style={{
-                        fontFamily:
-                          "Neurial Grotesk, sans-serif",
-                        color:
-                          upcomingClasses[0].subject.includes(
-                            "Mathematics"
-                          )
-                            ? "rgba(0,0,0,0.7)"
-                            : "rgba(255,255,255,0.8)",
-                      }}
-                    >
-                      {upcomingClasses[0].dayOfWeek} •{" "}
-                      {upcomingClasses[0].time}
-                    </p>
-                  </div>
-
-                  <ChevronRight
-                    className="w-6 h-6"
-                    style={{
-                      color:
-                        upcomingClasses[0].subject.includes(
-                          "Mathematics"
-                        )
-                          ? "rgba(0,0,0,0.4)"
-                          : "rgba(255,255,255,0.6)",
-                    }}
-                  />
-                </div>
-              </Card>
-            </motion.div>
-          ) : (
-            <motion.div
-              onClick={() => onNavigate("bookings")}
-              className="cursor-pointer"
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-            >
-              <Card
-                className="border border-marquis-border p-6"
-                style={{
-                  borderRadius: "20px",
-                  boxShadow:
-                    "0px 12px 28px rgba(0, 0, 0, 0.06)",
-                  background: "#FFFFFF",
-                }}
-              >
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3
-                      className="mb-2 flex items-center gap-2"
-                      style={{
-                        fontFamily:
-                          "Neurial Grotesk, sans-serif",
-                        fontWeight: 700,
-                        fontSize: "18px",
-                        color: "#000000",
-                      }}
-                    >
-                      View Your Schedule
-                      <ArrowUpRight
-                        className="w-5 h-5"
-                        style={{ color: "#FFD500" }}
-                      />
-                    </h3>
-
-                    <p
-                      className="text-sm mb-4"
-                      style={{
-                        fontFamily:
-                          "Neurial Grotesk, sans-serif",
-                        color: "#6E6E70",
-                      }}
-                    >
-                      No upcoming class is showing right now.
-                    </p>
-
-                    <Button
-                      className="rounded-xl border-0"
-                      style={{
-                        background: "#FFD500",
-                        color: "#000000",
-                        fontFamily:
-                          "Neurial Grotesk, sans-serif",
-                        fontWeight: 700,
-                        padding: "12px 24px",
-                        boxShadow:
-                          "0px 8px 16px rgba(255,213,0,0.3)",
-                      }}
-                    >
-                      View Schedule
-                    </Button>
-                  </div>
-
-                  <Calendar
-                    className="w-16 h-16"
-                    style={{
-                      color: "#FFD500",
-                      opacity: 0.3,
-                    }}
-                  />
-                </div>
-              </Card>
-            </motion.div>
-          )}
-        </motion.div>
-
-        {/* Quick Actions Grid - preserve original graphics */}
-        <div className="grid grid-cols-2 gap-4 pb-2">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.3 }}
-            onClick={() => onNavigate("study")}
-            className="cursor-pointer"
-            whileHover={{ scale: 1.05, y: -4 }}
-            whileTap={{ scale: 0.95 }}
-          >
-            <Card
-              className="border-0 p-5 text-center overflow-hidden relative"
-              style={{
-                borderRadius: "20px",
-                boxShadow:
-                  "0px 12px 28px rgba(0, 0, 0, 0.06)",
-                background: "#FFFFFF",
-              }}
-            >
-              <div
-                className="absolute top-0 right-0 w-20 h-20 rounded-full"
-                style={{
-                  background: "rgba(255,213,0,0.1)",
-                  transform: "translate(30%, -30%)",
-                }}
-              />
-
-              <div
-                className="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-3 relative"
-                style={{
-                  background: "#000000",
-                  boxShadow:
-                    "0px 8px 16px rgba(0,0,0,0.15)",
-                }}
-              >
-                <Target
-                  className="w-7 h-7"
-                  style={{
-                    color: "#FFD500",
-                    strokeWidth: 2.5,
-                  }}
-                />
-              </div>
-
-              <h4
-                className="mb-1"
-                style={{
-                  fontFamily: "Neurial Grotesk, sans-serif",
-                  fontWeight: 700,
-                  fontSize: "16px",
-                  color: "#000000",
-                }}
-              >
-                Study Tools
-              </h4>
-
+              <Calendar className="h-5 w-5" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p style={{ margin: 0, fontSize: "13px", fontWeight: 850 }}>Upcoming Class</p>
               <p
-                className="text-xs"
                 style={{
-                  fontFamily: "Neurial Grotesk, sans-serif",
-                  color: "#6E6E70",
+                  margin: "3px 0 0",
+                  color: "#716C65",
+                  fontSize: "8px",
+                  fontWeight: 650,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
                 }}
               >
-                Classroom, Focus & Memory
+                {nextClass ? `${nextClass.subject} · ${nextClass.dayOfWeek}, ${nextClass.time}` : "View your schedule"}
               </p>
-            </Card>
-          </motion.div>
+            </div>
+            <ChevronRight className="h-4 w-4" />
+          </div>
+        </motion.button>
 
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.4 }}
+        {/* SMALL MOTIVATION STRIP */}
+        <motion.section
+          whileHover={{ scale: 1.005 }}
+          style={{
+            marginBottom: "12px",
+            padding: "17px",
+            borderRadius: "24px",
+            background: "linear-gradient(135deg, #FFF5B8, #FFD500)",
+            boxShadow: "0 12px 25px rgba(255,213,0,0.14)",
+          }}
+        >
+          <p
+            style={{
+              margin: 0,
+              maxWidth: "92%",
+              fontFamily: "Georgia, serif",
+              fontStyle: "italic",
+              fontSize: "13px",
+              lineHeight: 1.35,
+              color: "#18130A",
+            }}
+          >
+            “{quote.text}”
+          </p>
+          <p style={{ margin: "7px 0 0", color: "rgba(0,0,0,0.55)", fontSize: "7.5px", fontWeight: 750 }}>
+            — {quote.author}
+          </p>
+        </motion.section>
+
+        {latestResult && (
+          <motion.button
+            type="button"
+            whileHover={{ y: -2 }}
+            whileTap={{ scale: 0.985 }}
             onClick={() => onNavigate("progress")}
-            className="cursor-pointer"
-            whileHover={{ scale: 1.05, y: -4 }}
-            whileTap={{ scale: 0.95 }}
+            style={{
+              width: "100%",
+              border: "none",
+              borderRadius: "20px",
+              padding: "11px 13px",
+              background: "#0A0A0A",
+              color: "#FFFFFF",
+              textAlign: "left",
+              cursor: "pointer",
+            }}
           >
-            <Card
-              className="border-0 p-5 text-center overflow-hidden relative"
-              style={{
-                borderRadius: "20px",
-                boxShadow:
-                  "0px 12px 28px rgba(0, 0, 0, 0.06)",
-                background: "#FFFFFF",
-              }}
-            >
-              <div
-                className="absolute top-0 right-0 w-20 h-20 rounded-full"
-                style={{
-                  background: "rgba(255,213,0,0.1)",
-                  transform: "translate(30%, -30%)",
-                }}
-              />
-
-              <div
-                className="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-3 relative"
-                style={{
-                  background: "#FFD500",
-                  boxShadow:
-                    "0px 8px 16px rgba(255,213,0,0.3)",
-                }}
-              >
-                <TrendingUp
-                  className="w-7 h-7"
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p style={{ margin: 0, color: "rgba(255,255,255,0.45)", fontSize: "7px", fontWeight: 750, textTransform: "uppercase" }}>
+                  Latest result
+                </p>
+                <p
                   style={{
-                    color: "#000000",
-                    strokeWidth: 2.5,
+                    margin: "3px 0 0",
+                    fontSize: "9px",
+                    fontWeight: 800,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
                   }}
-                />
+                >
+                  {latestResult.title}
+                </p>
               </div>
-
-              <h4
-                className="mb-1"
-                style={{
-                  fontFamily: "Neurial Grotesk, sans-serif",
-                  fontWeight: 700,
-                  fontSize: "16px",
-                  color: "#000000",
-                }}
-              >
-                My Progress
-              </h4>
-
-              <p
-                className="text-xs"
-                style={{
-                  fontFamily: "Neurial Grotesk, sans-serif",
-                  color: "#6E6E70",
-                }}
-              >
-                Track achievements
-              </p>
-            </Card>
-          </motion.div>
-        </div>
+              <div className="flex items-center gap-1" style={{ color: "#FFD500", fontSize: "10px", fontWeight: 900 }}>
+                {latestGrade}
+                <ArrowUpRight className="h-4 w-4" />
+              </div>
+            </div>
+          </motion.button>
+        )}
       </div>
     </div>
   );

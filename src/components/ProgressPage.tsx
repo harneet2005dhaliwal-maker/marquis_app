@@ -2,14 +2,19 @@ import { useEffect, useMemo, useState } from "react";
 import {
   AlertCircle,
   ArrowUpRight,
+  Award,
   BookOpen,
   CalendarDays,
+  Check,
   CheckCircle2,
   ChevronRight,
   Clock,
+  Flame,
   GraduationCap,
   Plus,
   Sparkles,
+  Star,
+  Target,
   TrendingUp,
 } from "lucide-react";
 import { motion } from "motion/react";
@@ -23,16 +28,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 
-import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
-import { Card } from "./ui/card";
-import { Progress } from "./ui/progress";
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "./ui/tabs";
 import {
   Dialog,
   DialogContent,
@@ -186,6 +182,8 @@ export function ProgressPage({ onNavigate }: ProgressPageProps) {
   const [courseFilter, setCourseFilter] = useState("all");
   const [graphMode, setGraphMode] =
     useState<"results" | "completion">("results");
+  const [activeTab, setActiveTab] =
+    useState<"overview" | "results" | "subjects">("overview");
   const [addOpen, setAddOpen] = useState(false);
   const [form, setForm] =
     useState<AssessmentForm>(emptyAssessmentForm);
@@ -564,522 +562,1654 @@ export function ProgressPage({ onNavigate }: ProgressPageProps) {
       ? data.resultGraph
       : data.completionGraph;
 
+  const focusSessionsCompleted = (() => {
+    if (typeof window === "undefined") return 0;
+    const raw = window.localStorage.getItem("marquis_focus_sessions_completed");
+    const value = Number(raw ?? "0");
+    return Number.isFinite(value) ? Math.max(0, value) : 0;
+  })();
+
+  const quizQuestionsCorrect = (() => {
+    if (typeof window === "undefined") return 0;
+    const raw = window.localStorage.getItem("marquis_quiz_questions_correct");
+    const value = Number(raw ?? "0");
+    return Number.isFinite(value) ? Math.max(0, value) : 0;
+  })();
+
+  const xp = Math.max(
+    0,
+    data.completed.length * 15 +
+      data.graded.length * 25 +
+      schoolAssessments.length * 5 +
+      focusSessionsCompleted * 10 +
+      quizQuestionsCorrect * 2
+  );
+  const level = Math.max(1, Math.floor(xp / 250) + 1);
+  const levelProgress = Math.min(100, ((xp % 250) / 250) * 100);
+
+  const recentMomentum = data.completionGraph
+    .slice(-4)
+    .filter((point) => point.value > 0).length;
+
+
+
+  const bestSubject = data.summaries
+    .filter((summary) => summary.averagePercent !== null)
+    .sort(
+      (a, b) =>
+        (b.averagePercent ?? 0) -
+        (a.averagePercent ?? 0)
+    )[0];
+
+  const insightText =
+    data.overdue.length > 0
+      ? `${data.overdue.length} overdue ${
+          data.overdue.length === 1 ? "task needs" : "tasks need"
+        } attention. Clearing the oldest one is the fastest way to lift your completion trend.`
+      : bestSubject?.averagePercent !== null &&
+        bestSubject?.averagePercent !== undefined
+      ? `${bestSubject.name} is currently your strongest subject at ${Math.round(
+          bestSubject.averagePercent
+        )}%. Keep that rhythm going.`
+      : data.completed.length > 0
+      ? `You have completed ${data.completed.length} ${
+          data.completed.length === 1 ? "task" : "tasks"
+        } recently. Your progress view will become richer as more grades are returned.`
+      : "Once you begin completing and receiving graded work, this page will start showing meaningful trends instead of repeating your task list.";
+
+  const achievementItems = [
+    {
+      icon: Clock,
+      title: "Focus Finisher",
+      unlocked: focusSessionsCompleted >= 1,
+      value: focusSessionsCompleted,
+      unit: focusSessionsCompleted === 1 ? "session" : "sessions",
+      detail: "Complete a Pomodoro focus session",
+      action: () => onNavigate?.("study"),
+      accent: "#FFD500",
+    },
+    {
+      icon: Star,
+      title: "Quiz Sharp",
+      unlocked: quizQuestionsCorrect >= 10,
+      value: quizQuestionsCorrect,
+      unit: "correct",
+      detail: "Get 10 quiz questions right",
+      action: () => onNavigate?.("study"),
+      accent: "#FFF0A3",
+    },
+    {
+      icon: CheckCircle2,
+      title: "Task Finisher",
+      unlocked: data.completed.length >= 1,
+      value: data.completed.length,
+      unit: data.completed.length === 1 ? "task" : "tasks",
+      detail: "Complete tracked coursework",
+      action: () => onNavigate?.("study"),
+      accent: "#FFD500",
+    },
+  ];
+
   return (
     <div
-      className="min-h-full pb-8 relative overflow-hidden"
+      className="min-h-full relative overflow-hidden"
       style={{
         background:
-          "linear-gradient(180deg, #FFF9E9 0%, #FFFFFF 38%, #F7F5FF 100%)",
+          "linear-gradient(180deg, #F8F6F0 0%, #FBFAF7 46%, #F1EEE7 100%)",
+        paddingBottom: "28px",
+        color: "#111111",
       }}
     >
-      <div
-        className="absolute inset-0 pointer-events-none"
+      {/* Very subtle ambient glass background */}
+      <motion.div
+        aria-hidden="true"
+        animate={{ x: [0, 16, 0], y: [0, -10, 0] }}
+        transition={{ duration: 12, repeat: Infinity, ease: "easeInOut" }}
         style={{
-          background:
-            "radial-gradient(circle at 95% 0%, rgba(255,213,0,.22), transparent 32%), radial-gradient(circle at 0% 45%, rgba(167,139,250,.10), transparent 30%)",
+          position: "absolute",
+          width: "220px",
+          height: "220px",
+          borderRadius: "50%",
+          top: "26px",
+          right: "-105px",
+          background: "rgba(255,213,0,0.18)",
+          filter: "blur(46px)",
+          pointerEvents: "none",
+        }}
+      />
+      <div
+        aria-hidden="true"
+        style={{
+          position: "absolute",
+          width: "190px",
+          height: "190px",
+          borderRadius: "50%",
+          top: "390px",
+          left: "-120px",
+          background: "rgba(255,255,255,0.72)",
+          filter: "blur(40px)",
+          pointerEvents: "none",
         }}
       />
 
-      <div className="p-5 space-y-4 relative">
-        <motion.div
-          initial={{ opacity: 0, y: -12 }}
+      <div
+        className="relative"
+        style={{
+          padding: "22px 15px 0",
+        }}
+      >
+        {/* HEADER */}
+        <motion.header
+          initial={{ opacity: 0, y: -8 }}
           animate={{ opacity: 1, y: 0 }}
-          className="flex items-end justify-between gap-3"
+          style={{
+            display: "flex",
+            alignItems: "flex-start",
+            justifyContent: "space-between",
+            gap: "14px",
+            marginBottom: "18px",
+          }}
         >
           <div>
-            <h1 className="m-0 text-[30px] font-bold tracking-tight">
+            <p
+              style={{
+                margin: 0,
+                color: "#9A7D00",
+                fontSize: "14px",
+                fontWeight: 850,
+                letterSpacing: "0.08em",
+                textTransform: "uppercase",
+              }}
+            >
+              Learning overview
+            </p>
+            <h1
+              style={{
+                margin: "5px 0 0",
+                fontSize: "31px",
+                lineHeight: 1,
+                fontWeight: 900,
+                letterSpacing: "-0.045em",
+              }}
+            >
               Your Progress
             </h1>
-            <p className="m-0 mt-1 text-sm text-[#656565]">
-              Results, deadlines & study priorities
+            <p
+              style={{
+                margin: "7px 0 0",
+                color: "#77716A",
+                fontSize: "11.5px",
+                lineHeight: 1.45,
+                fontWeight: 600,
+              }}
+            >
+              See the pattern, not just the workload.
             </p>
           </div>
 
-          <Button
-            size="sm"
+          <motion.button
+            type="button"
+            whileHover={{ y: -2 }}
+            whileTap={{ scale: 0.95 }}
             onClick={() => setAddOpen(true)}
-            className="rounded-xl bg-black text-white"
-          >
-            <Plus className="w-4 h-4 mr-1" />
-            Assessment
-          </Button>
-        </motion.div>
-
-        <motion.button
-          type="button"
-          onClick={() => setShowAIInsights(true)}
-          whileHover={{ y: -2 }}
-          whileTap={{ scale: 0.99 }}
-          className="w-full text-left"
-        >
-          <Card
-            className="border-0 p-5 overflow-hidden relative"
             style={{
-              borderRadius: "22px",
-              background:
-                "linear-gradient(135deg, #151515 0%, #28211A 52%, #4A3D08 100%)",
-              boxShadow: "0 12px 30px rgba(0,0,0,.16)",
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+              border: "1px solid rgba(0,0,0,0.06)",
+              borderRadius: "15px",
+              background: "rgba(255,255,255,0.74)",
+              backdropFilter: "blur(20px)",
+              WebkitBackdropFilter: "blur(20px)",
+              boxShadow: "0 10px 26px rgba(0,0,0,0.06)",
+              padding: "9px 11px",
+              fontSize: "10.5px",
+              fontWeight: 850,
+              cursor: "pointer",
             }}
           >
-            <div
-              className="absolute -right-8 -top-10 w-32 h-32 rounded-full"
-              style={{
-                background: "rgba(255,213,0,.22)",
-                filter: "blur(4px)",
-              }}
-            />
-
-            <div className="relative flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-11 h-11 rounded-2xl flex items-center justify-center bg-[#FFD500]">
-                  <Sparkles className="w-5 h-5 text-black" />
-                </div>
-                <div>
-                  <p className="m-0 text-[11px] font-bold tracking-widest text-[#FFD500] uppercase">
-                    Marquis
-                  </p>
-                  <h3 className="m-0 mt-1 text-base font-bold text-white">
-                    Insights & Study Planner
-                  </h3>
-                  <p className="m-0 mt-1 text-xs text-white/60">
-                    Classroom + your school assessments
-                  </p>
-                </div>
-              </div>
-              <ChevronRight className="w-5 h-5 text-white/60" />
-            </div>
-          </Card>
-        </motion.button>
+            <Plus className="h-3.5 w-3.5" />
+            Add
+          </motion.button>
+        </motion.header>
 
         {!googleProviderToken ? (
-          <Card className="p-5 border-0 rounded-2xl">
-            Sign in with Google to load Classroom progress.
-          </Card>
+          <section
+            style={{
+              padding: "18px",
+              borderRadius: "24px",
+              background: "rgba(255,255,255,0.78)",
+              backdropFilter: "blur(22px)",
+              WebkitBackdropFilter: "blur(22px)",
+              border: "1px solid rgba(255,255,255,0.94)",
+              boxShadow: "0 14px 32px rgba(0,0,0,0.06)",
+            }}
+          >
+            <p style={{ margin: 0, fontSize: "14px", fontWeight: 800 }}>
+              Connect Google Classroom to see progress.
+            </p>
+          </section>
         ) : loading ? (
-          <Card className="p-5 border-0 rounded-2xl flex gap-3">
-            <Clock className="w-5 h-5" />
-            Loading your progress...
-          </Card>
+          <section
+            className="flex items-center gap-3"
+            style={{
+              padding: "18px",
+              borderRadius: "24px",
+              background: "rgba(255,255,255,0.78)",
+              border: "1px solid rgba(255,255,255,0.94)",
+            }}
+          >
+            <Clock className="h-4 w-4" />
+            <span style={{ fontSize: "11.5px", color: "#77716A" }}>
+              Loading your progress…
+            </span>
+          </section>
         ) : error ? (
-          <Card className="p-5 border-0 rounded-2xl text-red-700">
+          <section
+            style={{
+              padding: "18px",
+              borderRadius: "24px",
+              background: "#FFF3F3",
+              color: "#B63E3E",
+              fontSize: "14px",
+            }}
+          >
             {error}
-          </Card>
+          </section>
         ) : (
           <>
-            <div className="grid grid-cols-2 gap-3">
-              <MetricCard
-                label="Average"
-                value={
-                  data.overallAverage === null
-                    ? "—"
-                    : `${Math.round(data.overallAverage)}%`
-                }
-                caption={`${data.graded.length} graded`}
-                variant="yellow"
-                icon={<TrendingUp className="w-5 h-5" />}
+            {/* HERO GLASS SNAPSHOT */}
+            <motion.section
+              initial={{ opacity: 0, y: 14 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.45 }}
+              style={{
+                position: "relative",
+                overflow: "hidden",
+                minHeight: "198px",
+                padding: "19px",
+                borderRadius: "29px",
+                background:
+                  "linear-gradient(145deg, rgba(255,255,255,0.92), rgba(255,255,255,0.68))",
+                backdropFilter: "blur(28px)",
+                WebkitBackdropFilter: "blur(28px)",
+                border: "1px solid rgba(255,255,255,0.96)",
+                boxShadow:
+                  "0 20px 48px rgba(36,30,15,0.09), inset 0 1px 0 rgba(255,255,255,0.9)",
+              }}
+            >
+              <motion.div
+                aria-hidden="true"
+                animate={{ rotate: [0, 8, 0], scale: [1, 1.06, 1] }}
+                transition={{ duration: 8, repeat: Infinity, ease: "easeInOut" }}
+                style={{
+                  position: "absolute",
+                  width: "150px",
+                  height: "150px",
+                  borderRadius: "42px",
+                  right: "-58px",
+                  top: "-64px",
+                  background:
+                    "linear-gradient(145deg, rgba(255,213,0,0.38), rgba(255,213,0,0.08))",
+                  transform: "rotate(14deg)",
+                }}
               />
-              <MetricCard
-                label="Completion"
-                value={`${Math.round(data.completionRate)}%`}
-                caption={`${data.completed.length}/${data.filtered.length} tasks`}
-                variant="green"
-                icon={<CheckCircle2 className="w-5 h-5" />}
-              />
-              <MetricCard
-                label="Overdue"
-                value={String(data.overdue.length)}
-                caption="Incomplete"
-                variant="coral"
-                icon={<AlertCircle className="w-5 h-5" />}
-              />
-              <MetricCard
-                label="Assessments"
-                value={String(
-                  data.upcomingAssessments.filter(
-                    (item) => item.source === "School"
-                  ).length
-                )}
-                caption="Added by you"
-                variant="purple"
-                icon={<GraduationCap className="w-5 h-5" />}
-              />
-            </div>
 
-            <Tabs defaultValue="overview" className="w-full">
-              <TabsList className="grid grid-cols-3 w-full h-11 p-1 rounded-xl bg-black/5">
-                <TabsTrigger value="overview">Overview</TabsTrigger>
-                <TabsTrigger value="results">Results</TabsTrigger>
-                <TabsTrigger value="subjects">Subjects</TabsTrigger>
-              </TabsList>
-
-              <TabsContent value="overview" className="space-y-4 mt-4">
-                <Card
-                  className="border-0 p-5"
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "108px minmax(0,1fr)",
+                  gap: "16px",
+                  alignItems: "center",
+                }}
+              >
+                {/* Compact ring */}
+                <div
+                  className="relative flex items-center justify-center"
                   style={{
-                    borderRadius: "22px",
-                    boxShadow: "0 8px 26px rgba(0,0,0,.06)",
+                    width: "108px",
+                    height: "108px",
                   }}
                 >
-                  <div className="flex items-start justify-between mb-4">
+                  <svg
+                    width="108"
+                    height="108"
+                    viewBox="0 0 108 108"
+                    style={{ transform: "rotate(-90deg)" }}
+                  >
+                    <circle
+                      cx="54"
+                      cy="54"
+                      r="45"
+                      fill="none"
+                      stroke="#ECE9E2"
+                      strokeWidth="9"
+                    />
+                    <motion.circle
+                      cx="54"
+                      cy="54"
+                      r="45"
+                      fill="none"
+                      stroke="#FFD500"
+                      strokeWidth="9"
+                      strokeLinecap="round"
+                      pathLength="100"
+                      initial={{ strokeDasharray: "0 100" }}
+                      animate={{
+                        strokeDasharray: `${Math.round(
+                          data.completionRate
+                        )} 100`,
+                      }}
+                      transition={{
+                        duration: 1,
+                        ease: "easeOut",
+                      }}
+                    />
+                  </svg>
+
+                  <div
+                    style={{
+                      position: "absolute",
+                      textAlign: "center",
+                    }}
+                  >
+                    <strong
+                      style={{
+                        display: "block",
+                        fontSize: "27px",
+                        lineHeight: 1,
+                        fontWeight: 900,
+                        letterSpacing: "-0.045em",
+                      }}
+                    >
+                      {Math.round(data.completionRate)}%
+                    </strong>
+                    <span
+                      style={{
+                        display: "block",
+                        marginTop: "4px",
+                        color: "#77716A",
+                        fontSize: "10.5px",
+                        fontWeight: 800,
+                        textTransform: "uppercase",
+                        letterSpacing: "0.06em",
+                      }}
+                    >
+                      completion
+                    </span>
+                  </div>
+                </div>
+
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <Target
+                      className="h-4 w-4"
+                      style={{ color: "#B08E00" }}
+                    />
+                    <span
+                      style={{
+                        color: "#77716A",
+                        fontSize: "14px",
+                        fontWeight: 850,
+                        textTransform: "uppercase",
+                        letterSpacing: "0.06em",
+                      }}
+                    >
+                      Learning snapshot
+                    </span>
+                  </div>
+
+                  <p
+                    style={{
+                      margin: "8px 0 0",
+                      fontSize: "16px",
+                      lineHeight: 1.3,
+                      fontWeight: 850,
+                      letterSpacing: "-0.02em",
+                    }}
+                  >
+                    {data.completed.length}{" "}
+                    {data.completed.length === 1 ? "task" : "tasks"} completed
+                  </p>
+
+                  <p
+                    style={{
+                      margin: "5px 0 0",
+                      color: "#77716A",
+                      fontSize: "10.5px",
+                      lineHeight: 1.45,
+                    }}
+                  >
+                    {data.overdue.length > 0
+                      ? `${data.overdue.length} overdue ${
+                          data.overdue.length === 1 ? "task" : "tasks"
+                        } still need attention.`
+                      : "Nothing overdue right now — nice work."}
+                  </p>
+
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(3,minmax(0,1fr))",
+                      gap: "6px",
+                      marginTop: "13px",
+                    }}
+                  >
+                    {[
+                      {
+                        value: data.completed.length,
+                        label: "done",
+                      },
+                      {
+                        value: data.graded.length,
+                        label: "graded",
+                      },
+                      {
+                        value:
+                          data.overallAverage === null
+                            ? "—"
+                            : `${Math.round(data.overallAverage)}%`,
+                        label: "average",
+                      },
+                    ].map((item) => (
+                      <div
+                        key={item.label}
+                        style={{
+                          minWidth: 0,
+                          padding: "8px 6px",
+                          borderRadius: "13px",
+                          background: "rgba(245,242,235,0.82)",
+                        }}
+                      >
+                        <strong
+                          style={{
+                            display: "block",
+                            fontSize: "14px",
+                            fontWeight: 900,
+                          }}
+                        >
+                          {item.value}
+                        </strong>
+                        <span
+                          style={{
+                            display: "block",
+                            marginTop: "2px",
+                            color: "#888178",
+                            fontSize: "11.5px",
+                            fontWeight: 750,
+                          }}
+                        >
+                          {item.label}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </motion.section>
+
+            {/* CLEAN SEGMENTED CONTROL */}
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(3,minmax(0,1fr))",
+                gap: "4px",
+                marginTop: "14px",
+                padding: "4px",
+                borderRadius: "17px",
+                background: "rgba(229,225,217,0.58)",
+                backdropFilter: "blur(16px)",
+                WebkitBackdropFilter: "blur(16px)",
+              }}
+            >
+              {(
+                [
+                  ["overview", "Overview"],
+                  ["results", "Results"],
+                  ["subjects", "Subjects"],
+                ] as const
+              ).map(([value, label]) => {
+                const selected = activeTab === value;
+
+                return (
+                  <motion.button
+                    type="button"
+                    key={value}
+                    whileTap={{ scale: 0.97 }}
+                    onClick={() => setActiveTab(value)}
+                    style={{
+                      minHeight: "38px",
+                      border: "none",
+                      borderRadius: "13px",
+                      background: selected
+                        ? "rgba(255,255,255,0.94)"
+                        : "transparent",
+                      boxShadow: selected
+                        ? "0 5px 15px rgba(0,0,0,0.07)"
+                        : "none",
+                      color: "#111111",
+                      fontSize: "10.5px",
+                      fontWeight: selected ? 900 : 750,
+                      cursor: "pointer",
+                      transition: "all 180ms ease",
+                    }}
+                  >
+                    {label}
+                  </motion.button>
+                );
+              })}
+            </div>
+
+            {/* OVERVIEW */}
+            {activeTab === "overview" && (
+              <motion.div
+                key="overview"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                style={{ marginTop: "14px" }}
+              >
+                {/* ONE MAIN CHART */}
+                <section
+                  style={{
+                    padding: "17px",
+                    borderRadius: "27px",
+                    background: "rgba(255,255,255,0.82)",
+                    backdropFilter: "blur(24px)",
+                    WebkitBackdropFilter: "blur(24px)",
+                    border: "1px solid rgba(255,255,255,0.96)",
+                    boxShadow: "0 14px 34px rgba(0,0,0,0.06)",
+                  }}
+                >
+                  <div className="flex items-start justify-between gap-3">
                     <div>
-                      <h2 className="m-0 text-lg font-bold">
-                        Performance
-                      </h2>
-                      <p className="m-0 mt-1 text-xs text-[#666]">
-                        Real Classroom data over time
+                      <div className="flex items-center gap-2">
+                        <TrendingUp className="h-4 w-4" />
+                        <h2
+                          style={{
+                            margin: 0,
+                            fontSize: "16px",
+                            fontWeight: 900,
+                            letterSpacing: "-0.02em",
+                          }}
+                        >
+                          Performance
+                        </h2>
+                      </div>
+                      <p
+                        style={{
+                          margin: "4px 0 0",
+                          color: "#837D75",
+                          fontSize: "9.5px",
+                        }}
+                      >
+                        Your one trend view — no repeated dashboards.
                       </p>
                     </div>
 
-                    <div className="flex p-1 bg-black/5 rounded-lg">
-                      <button
-                        onClick={() => setGraphMode("results")}
-                        className="px-3 py-1.5 rounded-md text-xs font-semibold"
-                        style={{
-                          background:
-                            graphMode === "results"
-                              ? "#FFFFFF"
-                              : "transparent",
-                          boxShadow:
-                            graphMode === "results"
-                              ? "0 2px 7px rgba(0,0,0,.08)"
-                              : "none",
-                        }}
-                      >
-                        Results
-                      </button>
-                      <button
-                        onClick={() => setGraphMode("completion")}
-                        className="px-3 py-1.5 rounded-md text-xs font-semibold"
-                        style={{
-                          background:
-                            graphMode === "completion"
-                              ? "#FFFFFF"
-                              : "transparent",
-                          boxShadow:
-                            graphMode === "completion"
-                              ? "0 2px 7px rgba(0,0,0,.08)"
-                              : "none",
-                        }}
-                      >
-                        Completion
-                      </button>
+                    <div
+                      style={{
+                        display: "flex",
+                        padding: "3px",
+                        borderRadius: "11px",
+                        background: "#F0EEE8",
+                      }}
+                    >
+                      {(
+                        [
+                          ["results", "Results"],
+                          ["completion", "Completion"],
+                        ] as const
+                      ).map(([value, label]) => (
+                        <button
+                          type="button"
+                          key={value}
+                          onClick={() => setGraphMode(value)}
+                          style={{
+                            border: "none",
+                            borderRadius: "9px",
+                            padding: "6px 7px",
+                            background:
+                              graphMode === value ? "#FFFFFF" : "transparent",
+                            boxShadow:
+                              graphMode === value
+                                ? "0 3px 9px rgba(0,0,0,0.07)"
+                                : "none",
+                            fontSize: "10.5px",
+                            fontWeight: 850,
+                            cursor: "pointer",
+                          }}
+                        >
+                          {label}
+                        </button>
+                      ))}
                     </div>
                   </div>
 
                   {graphData.length === 0 ? (
-                    <div className="h-48 flex items-center justify-center text-sm text-[#777]">
-                      No graph data available yet.
+                    <div
+                      style={{
+                        minHeight: "132px",
+                        display: "flex",
+                        flexDirection: "column",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        textAlign: "center",
+                      }}
+                    >
+                      <div
+                        className="flex items-center justify-center"
+                        style={{
+                          width: "37px",
+                          height: "37px",
+                          borderRadius: "13px",
+                          background: "#FFF7CF",
+                          color: "#9A7B00",
+                        }}
+                      >
+                        <TrendingUp className="h-4 w-4" />
+                      </div>
+                      <p
+                        style={{
+                          margin: "10px 0 0",
+                          fontSize: "14px",
+                          fontWeight: 800,
+                        }}
+                      >
+                        Your trend will appear here
+                      </p>
+                      <p
+                        style={{
+                          maxWidth: "195px",
+                          margin: "4px 0 0",
+                          color: "#8A837A",
+                          fontSize: "9.5px",
+                          lineHeight: 1.45,
+                        }}
+                      >
+                        Once grades or weekly completions come through, this
+                        space becomes your visual timeline.
+                      </p>
                     </div>
                   ) : (
-                    <div className="h-52">
+                    <div style={{ height: "190px", marginTop: "10px" }}>
                       <ResponsiveContainer width="100%" height="100%">
                         <LineChart
                           data={graphData}
                           margin={{
-                            top: 8,
+                            top: 10,
                             right: 8,
-                            left: -24,
+                            left: -28,
                             bottom: 0,
                           }}
                         >
                           <CartesianGrid
-                            strokeDasharray="3 3"
+                            strokeDasharray="2 5"
                             vertical={false}
-                            stroke="#ECECEC"
+                            stroke="#E7E3DB"
                           />
                           <XAxis
                             dataKey="label"
-                            tick={{ fontSize: 10 }}
+                            tick={{
+                              fontSize: 8,
+                              fill: "#8A847C",
+                            }}
                             axisLine={false}
                             tickLine={false}
                           />
                           <YAxis
                             domain={[0, 100]}
-                            tick={{ fontSize: 10 }}
+                            tick={{
+                              fontSize: 8,
+                              fill: "#8A847C",
+                            }}
                             axisLine={false}
                             tickLine={false}
                           />
                           <Tooltip
+                            cursor={{
+                              stroke: "#E4DFD5",
+                              strokeDasharray: "3 3",
+                            }}
                             contentStyle={{
-                              borderRadius: "12px",
-                              border: "1px solid #eee",
-                              fontSize: "12px",
+                              borderRadius: "15px",
+                              border: "1px solid rgba(0,0,0,0.05)",
+                              boxShadow: "0 10px 24px rgba(0,0,0,0.09)",
+                              fontSize: "14px",
                             }}
                           />
                           <Line
                             type="monotone"
                             dataKey="value"
-                            stroke="#E1B800"
+                            stroke="#D7AD00"
                             strokeWidth={3}
                             dot={{
-                              r: 4,
+                              r: 3.5,
                               fill: "#FFD500",
-                              stroke: "#111111",
-                              strokeWidth: 1.5,
+                              stroke: "#FFFFFF",
+                              strokeWidth: 2,
                             }}
-                            activeDot={{ r: 6 }}
+                            activeDot={{
+                              r: 5,
+                              fill: "#111111",
+                              stroke: "#FFD500",
+                              strokeWidth: 2,
+                            }}
                           />
                         </LineChart>
                       </ResponsiveContainer>
                     </div>
                   )}
-                </Card>
+                </section>
 
-                <Card
-                  className="border-0 p-5"
+                {/* SUBJECT SNAPSHOT, NOT ANOTHER GRAPH */}
+                <section
                   style={{
-                    borderRadius: "22px",
-                    boxShadow: "0 8px 26px rgba(0,0,0,.05)",
+                    marginTop: "14px",
+                    padding: "17px",
+                    borderRadius: "27px",
+                    background: "rgba(255,255,255,0.78)",
+                    border: "1px solid rgba(255,255,255,0.96)",
+                    boxShadow: "0 13px 30px rgba(0,0,0,0.055)",
                   }}
                 >
-                  <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center justify-between">
                     <div>
-                      <h2 className="m-0 text-lg font-bold">
-                        Upcoming
+                      <h2
+                        style={{
+                          margin: 0,
+                          fontSize: "16px",
+                          fontWeight: 900,
+                        }}
+                      >
+                        Subject snapshot
                       </h2>
-                      <p className="m-0 mt-1 text-xs text-[#666]">
-                        Classroom + school assessments
+                      <p
+                        style={{
+                          margin: "4px 0 0",
+                          color: "#837D75",
+                          fontSize: "9.5px",
+                        }}
+                      >
+                        Completion by subject
                       </p>
                     </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setAddOpen(true)}
-                      className="rounded-xl"
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab("subjects")}
+                      style={{
+                        border: "none",
+                        background: "transparent",
+                        fontSize: "9.5px",
+                        fontWeight: 850,
+                        cursor: "pointer",
+                      }}
                     >
-                      <Plus className="w-4 h-4 mr-1" />
+                      See all
+                    </button>
+                  </div>
+
+                  <div style={{ marginTop: "13px" }}>
+                    {data.summaries.slice(0, 4).map((summary, index) => (
+                      <motion.button
+                        type="button"
+                        key={summary.id}
+                        whileHover={{ x: 3 }}
+                        whileTap={{ scale: 0.99 }}
+                        onClick={() => setCourseFilter(summary.id)}
+                        style={{
+                          width: "100%",
+                          display: "grid",
+                          gridTemplateColumns: "86px minmax(0,1fr) 38px",
+                          alignItems: "center",
+                          gap: "8px",
+                          padding: index === 0 ? "3px 0 9px" : "9px 0",
+                          border: "none",
+                          borderTop:
+                            index === 0 ? "none" : "1px solid #EFECE6",
+                          background: "transparent",
+                          textAlign: "left",
+                          cursor: "pointer",
+                        }}
+                      >
+                        <span
+                          style={{
+                            fontSize: "11.5px",
+                            fontWeight: 800,
+                            whiteSpace: "nowrap",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                          }}
+                        >
+                          {summary.name}
+                        </span>
+
+                        <div
+                          style={{
+                            height: "7px",
+                            borderRadius: "999px",
+                            overflow: "hidden",
+                            background: "#ECE9E2",
+                          }}
+                        >
+                          <motion.div
+                            initial={{ width: 0 }}
+                            whileInView={{
+                              width: `${Math.round(summary.completionRate)}%`,
+                            }}
+                            viewport={{ once: true }}
+                            transition={{
+                              duration: 0.75,
+                              delay: index * 0.06,
+                            }}
+                            style={{
+                              height: "100%",
+                              borderRadius: "999px",
+                              background: "#FFD500",
+                            }}
+                          />
+                        </div>
+
+                        <strong
+                          style={{
+                            textAlign: "right",
+                            fontSize: "11.5px",
+                          }}
+                        >
+                          {Math.round(summary.completionRate)}%
+                        </strong>
+                      </motion.button>
+                    ))}
+
+                    {data.summaries.length === 0 && (
+                      <p
+                        style={{
+                          margin: "10px 0 0",
+                          color: "#888178",
+                          fontSize: "11.5px",
+                        }}
+                      >
+                        Subject progress will appear once Classroom activity is
+                        available.
+                      </p>
+                    )}
+                  </div>
+                </section>
+
+                {/* REWARD / MOMENTUM SYSTEM */}
+                <section
+                  style={{
+                    marginTop: "14px",
+                    overflow: "hidden",
+                    borderRadius: "27px",
+                    background:
+                      "linear-gradient(145deg, #171717 0%, #080808 100%)",
+                    color: "#FFFFFF",
+                    boxShadow: "0 17px 36px rgba(0,0,0,0.14)",
+                  }}
+                >
+                  <div style={{ padding: "17px" }}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <div
+                          className="flex items-center justify-center"
+                          style={{
+                            width: "39px",
+                            height: "39px",
+                            borderRadius: "14px",
+                            background: "#FFD500",
+                            color: "#000000",
+                          }}
+                        >
+                          <Award className="h-5 w-5" />
+                        </div>
+
+                        <div>
+                          <p
+                            style={{
+                              margin: 0,
+                              color: "#FFD500",
+                              fontSize: "10.5px",
+                              fontWeight: 850,
+                              textTransform: "uppercase",
+                              letterSpacing: "0.08em",
+                            }}
+                          >
+                            Reward system
+                          </p>
+                          <h2
+                            style={{
+                              margin: "3px 0 0",
+                              fontSize: "16px",
+                              fontWeight: 900,
+                            }}
+                          >
+                            Level {level} Learner
+                          </h2>
+                        </div>
+                      </div>
+
+                      <div style={{ textAlign: "right" }}>
+                        <strong
+                          style={{
+                            display: "block",
+                            fontSize: "14px",
+                            color: "#FFD500",
+                          }}
+                        >
+                          {xp} XP
+                        </strong>
+                        <span
+                          style={{
+                            display: "block",
+                            marginTop: "2px",
+                            color: "rgba(255,255,255,0.46)",
+                            fontSize: "11.5px",
+                          }}
+                        >
+                          academic activity
+                        </span>
+                      </div>
+                    </div>
+
+                    <div
+                      style={{
+                        height: "8px",
+                        marginTop: "15px",
+                        borderRadius: "999px",
+                        overflow: "hidden",
+                        background: "rgba(255,255,255,0.10)",
+                      }}
+                    >
+                      <motion.div
+                        initial={{ width: 0 }}
+                        whileInView={{ width: `${levelProgress}%` }}
+                        viewport={{ once: true }}
+                        transition={{ duration: 0.85 }}
+                        style={{
+                          height: "100%",
+                          borderRadius: "999px",
+                          background: "#FFD500",
+                        }}
+                      />
+                    </div>
+
+                    <div
+                      className="flex items-center justify-between"
+                      style={{ marginTop: "6px" }}
+                    >
+                      <span
+                        style={{
+                          color: "rgba(255,255,255,0.46)",
+                          fontSize: "11.5px",
+                        }}
+                      >
+                        {xp % 250} / 250 XP
+                      </span>
+                      <span
+                        style={{
+                          color: "rgba(255,255,255,0.46)",
+                          fontSize: "11.5px",
+                        }}
+                      >
+                        Level {level + 1}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(3,minmax(0,1fr))",
+                      gap: "8px",
+                      padding: "0 14px 14px",
+                      background: "#101010",
+                    }}
+                  >
+                    {achievementItems.map((achievement) => {
+                      const Icon = achievement.icon;
+
+                      return (
+                        <motion.button
+                          type="button"
+                          key={achievement.title}
+                          whileHover={{ y: -3 }}
+                          whileTap={{ scale: 0.97 }}
+                          onClick={achievement.action}
+                          style={{
+                            minWidth: 0,
+                            minHeight: "118px",
+                            padding: "12px 10px",
+                            border: achievement.unlocked
+                              ? "1px solid rgba(255,213,0,0.32)"
+                              : "1px solid rgba(255,255,255,0.08)",
+                            borderRadius: "18px",
+                            background: achievement.unlocked
+                              ? "linear-gradient(145deg, rgba(255,213,0,0.10), rgba(255,255,255,0.035))"
+                              : "rgba(255,255,255,0.035)",
+                            color: "#FFFFFF",
+                            textAlign: "left",
+                            cursor: "pointer",
+                            opacity: achievement.unlocked ? 1 : 0.72,
+                          }}
+                        >
+                          <div
+                            className="flex items-center justify-between gap-2"
+                          >
+                            <div
+                              className="flex items-center justify-center"
+                              style={{
+                                width: "31px",
+                                height: "31px",
+                                borderRadius: "11px",
+                                background: achievement.unlocked
+                                  ? achievement.accent
+                                  : "rgba(255,255,255,0.08)",
+                                color: achievement.unlocked
+                                  ? "#000000"
+                                  : "rgba(255,255,255,0.5)",
+                              }}
+                            >
+                              <Icon className="h-4 w-4" />
+                            </div>
+
+                            <span
+                              style={{
+                                padding: "4px 6px",
+                                borderRadius: "999px",
+                                background: achievement.unlocked
+                                  ? "rgba(255,213,0,0.12)"
+                                  : "rgba(255,255,255,0.05)",
+                                color: achievement.unlocked
+                                  ? "#FFD500"
+                                  : "rgba(255,255,255,0.38)",
+                                fontSize: "8px",
+                                fontWeight: 850,
+                              }}
+                            >
+                              {achievement.unlocked ? "Unlocked" : "Locked"}
+                            </span>
+                          </div>
+
+                          <p
+                            style={{
+                              margin: "10px 0 0",
+                              fontSize: "10.5px",
+                              lineHeight: 1.1,
+                              fontWeight: 900,
+                            }}
+                          >
+                            {achievement.title}
+                          </p>
+
+                          <p
+                            style={{
+                              margin: "5px 0 0",
+                              color: "rgba(255,255,255,0.52)",
+                              fontSize: "8px",
+                              lineHeight: 1.35,
+                            }}
+                          >
+                            {achievement.detail}
+                          </p>
+
+                          <div
+                            className="flex items-end justify-between gap-2"
+                            style={{
+                              marginTop: "11px",
+                            }}
+                          >
+                            <div>
+                              <strong
+                                style={{
+                                  display: "block",
+                                  color: achievement.unlocked
+                                    ? "#FFD500"
+                                    : "#FFFFFF",
+                                  fontSize: "12px",
+                                  fontWeight: 900,
+                                }}
+                              >
+                                {achievement.value}
+                              </strong>
+                              <span
+                                style={{
+                                  display: "block",
+                                  marginTop: "1px",
+                                  color: "rgba(255,255,255,0.38)",
+                                  fontSize: "7px",
+                                  fontWeight: 700,
+                                }}
+                              >
+                                {achievement.unit}
+                              </span>
+                            </div>
+
+                            <ChevronRight
+                              className="h-3.5 w-3.5"
+                              style={{
+                                color: achievement.unlocked
+                                  ? "#FFD500"
+                                  : "rgba(255,255,255,0.28)",
+                              }}
+                            />
+                          </div>
+                        </motion.button>
+                      );
+                    })}
+                  </div>
+                </section>
+
+                {/* COMPACT UPCOMING */}
+                <section
+                  style={{
+                    marginTop: "14px",
+                    padding: "17px",
+                    borderRadius: "27px",
+                    background: "rgba(255,255,255,0.80)",
+                    border: "1px solid rgba(255,255,255,0.96)",
+                    boxShadow: "0 13px 30px rgba(0,0,0,0.055)",
+                  }}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <h2
+                        style={{
+                          margin: 0,
+                          fontSize: "16px",
+                          fontWeight: 900,
+                        }}
+                      >
+                        Coming up
+                      </h2>
+                      <p
+                        style={{
+                          margin: "4px 0 0",
+                          color: "#837D75",
+                          fontSize: "9.5px",
+                        }}
+                      >
+                        Classroom + your assessments
+                      </p>
+                    </div>
+
+                    <motion.button
+                      type="button"
+                      whileTap={{ scale: 0.95 }}
+                      onClick={() => setAddOpen(true)}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "4px",
+                        border: "none",
+                        borderRadius: "11px",
+                        background: "#111111",
+                        color: "#FFFFFF",
+                        padding: "7px 9px",
+                        fontSize: "14px",
+                        fontWeight: 850,
+                        cursor: "pointer",
+                      }}
+                    >
+                      <Plus className="h-3 w-3" />
                       Add
-                    </Button>
+                    </motion.button>
                   </div>
 
                   {assessmentLoading ? (
-                    <p className="text-sm text-[#777]">
-                      Loading school assessments...
+                    <p
+                      style={{
+                        margin: "13px 0 0",
+                        color: "#837D75",
+                        fontSize: "11.5px",
+                      }}
+                    >
+                      Loading assessments…
                     </p>
                   ) : data.upcomingAssessments.length === 0 ? (
-                    <div className="py-7 text-center">
-                      <CalendarDays className="w-7 h-7 mx-auto mb-2 text-[#C59F00]" />
-                      <p className="m-0 text-sm font-semibold">
+                    <div
+                      style={{
+                        marginTop: "13px",
+                        padding: "16px",
+                        borderRadius: "16px",
+                        background: "#F5F2EB",
+                        textAlign: "center",
+                      }}
+                    >
+                      <CalendarDays
+                        className="mx-auto h-4 w-4"
+                        style={{ color: "#A48500" }}
+                      />
+                      <p
+                        style={{
+                          margin: "7px 0 0",
+                          fontSize: "11.5px",
+                          fontWeight: 800,
+                        }}
+                      >
                         Nothing upcoming
-                      </p>
-                      <p className="m-0 mt-1 text-xs text-[#777]">
-                        Add an exam or assessment if it isn't in Classroom.
                       </p>
                     </div>
                   ) : (
-                    <div className="space-y-2">
-                      {data.upcomingAssessments.map((item) => {
-                        const days = daysFromNow(item.dueAt);
+                    <div style={{ marginTop: "12px" }}>
+                      {data.upcomingAssessments.slice(0, 4).map(
+                        (item, index) => {
+                          const days = daysFromNow(item.dueAt);
 
-                        return (
-                          <div
-                            key={item.id}
-                            className="flex items-center gap-3 p-3 rounded-2xl"
-                            style={{
-                              background:
-                                item.source === "School"
-                                  ? "#F5F1FF"
-                                  : "#FFF9DF",
-                            }}
-                          >
-                            <div
-                              className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+                          return (
+                            <motion.div
+                              key={item.id}
+                              whileHover={{ x: 3 }}
                               style={{
-                                background:
-                                  item.source === "School"
-                                    ? "#E8DEFF"
-                                    : "#FFD50033",
+                                display: "grid",
+                                gridTemplateColumns:
+                                  "34px minmax(0,1fr) 45px",
+                                alignItems: "center",
+                                gap: "10px",
+                                padding: index === 0 ? "4px 0 10px" : "10px 0",
+                                borderTop:
+                                  index === 0
+                                    ? "none"
+                                    : "1px solid #EEEAE3",
                               }}
                             >
-                              {item.source === "School" ? (
-                                <GraduationCap className="w-5 h-5 text-[#7357B8]" />
-                              ) : (
-                                <BookOpen className="w-5 h-5 text-[#A88400]" />
-                              )}
-                            </div>
-
-                            <div className="flex-1 min-w-0">
-                              <div className="flex gap-2 items-center">
-                                <p className="m-0 text-[11px] font-bold text-[#777] truncate">
-                                  {item.subject}
-                                </p>
-                                <Badge
-                                  className="text-[9px] px-1.5 py-0 border-0"
-                                  style={{
-                                    background: "rgba(255,255,255,.75)",
-                                    color: "#555",
-                                  }}
-                                >
-                                  {item.source}
-                                </Badge>
-                              </div>
-                              <p className="m-0 mt-1 text-sm font-bold truncate">
-                                {item.title}
-                              </p>
-                              <p className="m-0 mt-1 text-[11px] text-[#666]">
-                                {item.type}
-                                {item.weighting !== null
-                                  ? ` • ${item.weighting}% weighting`
-                                  : ""}
-                              </p>
-                            </div>
-
-                            <div className="text-right shrink-0">
-                              <p
-                                className="m-0 text-sm font-extrabold"
+                              <div
+                                className="flex items-center justify-center"
                                 style={{
+                                  width: "34px",
+                                  height: "34px",
+                                  borderRadius: "12px",
+                                  background:
+                                    item.source === "School"
+                                      ? "#111111"
+                                      : "#FFF4B5",
                                   color:
-                                    days <= 2
-                                      ? "#D44949"
+                                    item.source === "School"
+                                      ? "#FFD500"
                                       : "#111111",
                                 }}
                               >
-                                {days === 0
-                                  ? "Today"
-                                  : days === 1
-                                  ? "Tomorrow"
-                                  : `${days}d`}
+                                {item.source === "School" ? (
+                                  <GraduationCap className="h-4 w-4" />
+                                ) : (
+                                  <BookOpen className="h-4 w-4" />
+                                )}
+                              </div>
+
+                              <div className="min-w-0">
+                                <p
+                                  style={{
+                                    margin: 0,
+                                    color: "#898279",
+                                    fontSize: "10.5px",
+                                    fontWeight: 800,
+                                    overflow: "hidden",
+                                    textOverflow: "ellipsis",
+                                    whiteSpace: "nowrap",
+                                  }}
+                                >
+                                  {item.subject}
+                                </p>
+                                <p
+                                  style={{
+                                    margin: "3px 0 0",
+                                    fontSize: "10.5px",
+                                    fontWeight: 850,
+                                    overflow: "hidden",
+                                    textOverflow: "ellipsis",
+                                    whiteSpace: "nowrap",
+                                  }}
+                                >
+                                  {item.title}
+                                </p>
+                                <p
+                                  style={{
+                                    margin: "2px 0 0",
+                                    color: "#918A82",
+                                    fontSize: "11.5px",
+                                  }}
+                                >
+                                  {item.source}
+                                  {item.weighting !== null
+                                    ? ` · ${item.weighting}%`
+                                    : ""}
+                                </p>
+                              </div>
+
+                              <div style={{ textAlign: "right" }}>
+                                <strong
+                                  style={{
+                                    display: "block",
+                                    fontSize: "10.5px",
+                                    color:
+                                      days <= 2 ? "#C44949" : "#111111",
+                                  }}
+                                >
+                                  {days === 0
+                                    ? "Today"
+                                    : days === 1
+                                    ? "Tomorrow"
+                                    : `${days}d`}
+                                </strong>
+                                <span
+                                  style={{
+                                    display: "block",
+                                    marginTop: "3px",
+                                    color: "#918A82",
+                                    fontSize: "11.5px",
+                                  }}
+                                >
+                                  {formatShortDate(item.dueAt)}
+                                </span>
+                              </div>
+                            </motion.div>
+                          );
+                        }
+                      )}
+                    </div>
+                  )}
+                </section>
+
+                {/* ONE SMALL INSIGHT */}
+                <motion.button
+                  type="button"
+                  whileHover={{ y: -2 }}
+                  whileTap={{ scale: 0.99 }}
+                  onClick={() => setShowAIInsights(true)}
+                  style={{
+                    width: "100%",
+                    marginTop: "14px",
+                    padding: "15px",
+                    border: "1px solid rgba(0,0,0,0.05)",
+                    borderRadius: "23px",
+                    background:
+                      "linear-gradient(135deg, rgba(255,248,207,0.92), rgba(255,255,255,0.88))",
+                    boxShadow: "0 11px 26px rgba(0,0,0,0.05)",
+                    textAlign: "left",
+                    cursor: "pointer",
+                  }}
+                >
+                  <div className="flex items-start gap-3">
+                    <div
+                      className="flex shrink-0 items-center justify-center"
+                      style={{
+                        width: "34px",
+                        height: "34px",
+                        borderRadius: "12px",
+                        background: "#FFD500",
+                      }}
+                    >
+                      <Sparkles className="h-4 w-4" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p
+                        style={{
+                          margin: 0,
+                          color: "#9A7D00",
+                          fontSize: "11.5px",
+                          fontWeight: 900,
+                          textTransform: "uppercase",
+                          letterSpacing: "0.07em",
+                        }}
+                      >
+                        Insight
+                      </p>
+                      <p
+                        style={{
+                          margin: "4px 0 0",
+                          fontSize: "10.5px",
+                          fontWeight: 750,
+                          lineHeight: 1.45,
+                        }}
+                      >
+                        {insightText}
+                      </p>
+                    </div>
+                    <ChevronRight className="h-4 w-4 shrink-0" />
+                  </div>
+                </motion.button>
+              </motion.div>
+            )}
+
+            {/* RESULTS TAB */}
+            {activeTab === "results" && (
+              <motion.div
+                key="results"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                style={{ marginTop: "14px" }}
+              >
+                <section
+                  style={{
+                    padding: "17px",
+                    borderRadius: "27px",
+                    background: "rgba(255,255,255,0.82)",
+                    border: "1px solid rgba(255,255,255,0.96)",
+                    boxShadow: "0 14px 32px rgba(0,0,0,0.055)",
+                  }}
+                >
+                  <div className="flex items-center gap-2">
+                    <TrendingUp className="h-4 w-4" />
+                    <h2 style={{ margin: 0, fontSize: "16px", fontWeight: 900 }}>
+                      Recent results
+                    </h2>
+                  </div>
+
+                  {data.recentResults.length === 0 ? (
+                    <div
+                      style={{
+                        padding: "34px 12px",
+                        textAlign: "center",
+                        color: "#837D75",
+                        fontSize: "10.5px",
+                      }}
+                    >
+                      No returned grades are available yet.
+                    </div>
+                  ) : (
+                    <div style={{ marginTop: "12px" }}>
+                      {data.recentResults.map((item, index) => {
+                        const percentage = getPercentage(item);
+                        const due = getDueDate(item);
+
+                        return (
+                          <motion.div
+                            key={`${item.courseId}-${item.id}`}
+                            whileHover={{ x: 3 }}
+                            style={{
+                              display: "grid",
+                              gridTemplateColumns: "minmax(0,1fr) 50px",
+                              gap: "10px",
+                              padding: index === 0 ? "3px 0 11px" : "11px 0",
+                              borderTop:
+                                index === 0
+                                  ? "none"
+                                  : "1px solid #EEEAE3",
+                            }}
+                          >
+                            <div className="min-w-0">
+                              <p
+                                style={{
+                                  margin: 0,
+                                  color: "#8B847B",
+                                  fontSize: "10.5px",
+                                  fontWeight: 800,
+                                }}
+                              >
+                                {item.courseName}
                               </p>
-                              <p className="m-0 mt-1 text-[10px] text-[#777]">
-                                {formatShortDate(item.dueAt)}
+                              <p
+                                style={{
+                                  margin: "3px 0 0",
+                                  fontSize: "10.5px",
+                                  fontWeight: 850,
+                                }}
+                              >
+                                {item.title}
                               </p>
+                              {due && (
+                                <p
+                                  style={{
+                                    margin: "3px 0 0",
+                                    color: "#918A82",
+                                    fontSize: "11.5px",
+                                  }}
+                                >
+                                  {formatShortDate(due)}
+                                </p>
+                              )}
                             </div>
-                          </div>
+
+                            <div style={{ textAlign: "right" }}>
+                              <strong
+                                style={{
+                                  display: "block",
+                                  fontSize: "14px",
+                                  fontWeight: 900,
+                                }}
+                              >
+                                {percentage === null
+                                  ? "—"
+                                  : `${Math.round(percentage)}%`}
+                              </strong>
+                              <span
+                                style={{
+                                  display: "block",
+                                  marginTop: "3px",
+                                  color: "#918A82",
+                                  fontSize: "11.5px",
+                                }}
+                              >
+                                {item.submission?.assignedGrade}
+                                {typeof item.maxPoints === "number"
+                                  ? `/${item.maxPoints}`
+                                  : ""}
+                              </span>
+                            </div>
+                          </motion.div>
                         );
                       })}
                     </div>
                   )}
-                </Card>
-              </TabsContent>
+                </section>
+              </motion.div>
+            )}
 
-              <TabsContent value="results" className="space-y-3 mt-4">
-                {data.recentResults.length === 0 ? (
-                  <Card className="p-5 border-0 rounded-2xl">
-                    No returned grades are available yet.
-                  </Card>
-                ) : (
-                  data.recentResults.map((item) => {
-                    const percentage = getPercentage(item);
-                    const due = getDueDate(item);
-
-                    return (
-                      <Card
-                        key={`${item.courseId}-${item.id}`}
-                        className="border-0 p-4"
-                        style={{
-                          borderRadius: "18px",
-                          boxShadow:
-                            "0 5px 18px rgba(0,0,0,.05)",
-                        }}
-                      >
-                        <div className="flex items-center justify-between gap-4">
-                          <div className="min-w-0">
-                            <p className="m-0 text-[11px] font-bold text-[#777]">
-                              {item.courseName}
-                            </p>
-                            <p className="m-0 mt-1 text-sm font-bold">
-                              {item.title}
-                            </p>
-                            {due && (
-                              <p className="m-0 mt-1 text-[11px] text-[#777]">
-                                {formatShortDate(due)}
-                              </p>
-                            )}
-                          </div>
-
-                          <div className="text-right shrink-0">
-                            <p className="m-0 text-lg font-extrabold">
-                              {item.submission?.assignedGrade}
-                              {typeof item.maxPoints === "number"
-                                ? `/${item.maxPoints}`
-                                : ""}
-                            </p>
-                            {percentage !== null && (
-                              <Badge
-                                className="border-0 mt-1"
-                                style={{
-                                  background:
-                                    percentage >= 80
-                                      ? "#E8F8EE"
-                                      : percentage >= 60
-                                      ? "#FFF5C7"
-                                      : "#FFE7E7",
-                                  color:
-                                    percentage >= 80
-                                      ? "#247744"
-                                      : percentage >= 60
-                                      ? "#8A6A00"
-                                      : "#B63E3E",
-                                }}
-                              >
-                                {Math.round(percentage)}%
-                              </Badge>
-                            )}
-                          </div>
-                        </div>
-                      </Card>
-                    );
-                  })
-                )}
-              </TabsContent>
-
-              <TabsContent value="subjects" className="space-y-3 mt-4">
-                {data.summaries.map((summary) => (
-                  <Card
-                    key={summary.id}
-                    className="border-0 p-4"
+            {/* SUBJECTS TAB */}
+            {activeTab === "subjects" && (
+              <motion.div
+                key="subjects"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                style={{ marginTop: "14px" }}
+              >
+                <section
+                  style={{
+                    padding: "17px",
+                    borderRadius: "27px",
+                    background: "rgba(255,255,255,0.82)",
+                    border: "1px solid rgba(255,255,255,0.96)",
+                    boxShadow: "0 14px 32px rgba(0,0,0,0.055)",
+                  }}
+                >
+                  <h2 style={{ margin: 0, fontSize: "16px", fontWeight: 900 }}>
+                    Your subjects
+                  </h2>
+                  <p
                     style={{
-                      borderRadius: "18px",
-                      boxShadow:
-                        "0 5px 18px rgba(0,0,0,.05)",
+                      margin: "4px 0 0",
+                      color: "#837D75",
+                      fontSize: "9.5px",
                     }}
                   >
-                    <div className="flex justify-between gap-4 mb-3">
-                      <div>
-                        <h3 className="m-0 text-sm font-bold">
-                          {summary.name}
-                        </h3>
-                        <p className="m-0 mt-1 text-[11px] text-[#666]">
-                          {summary.completed}/{summary.total} complete
-                          {summary.overdue > 0
-                            ? ` • ${summary.overdue} overdue`
-                            : ""}
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        <p className="m-0 text-lg font-extrabold">
-                          {summary.averagePercent === null
-                            ? "—"
-                            : `${Math.round(
-                                summary.averagePercent
-                              )}%`}
-                        </p>
-                        <p className="m-0 text-[10px] text-[#777]">
-                          average
-                        </p>
-                      </div>
-                    </div>
-                    <Progress
-                      value={summary.completionRate}
-                      className="h-2.5"
-                    />
-                  </Card>
-                ))}
-              </TabsContent>
-            </Tabs>
+                    One clean view of completion and average.
+                  </p>
 
-            <Button
-              className="w-full rounded-xl"
-              variant="outline"
-              onClick={() => onNavigate?.("study")}
-            >
-              Open Study Tools
-              <ArrowUpRight className="w-4 h-4 ml-2" />
-            </Button>
+                  <div style={{ marginTop: "13px" }}>
+                    {data.summaries.map((summary, index) => (
+                      <motion.div
+                        key={summary.id}
+                        whileHover={{ x: 3 }}
+                        style={{
+                          padding: index === 0 ? "3px 0 12px" : "12px 0",
+                          borderTop:
+                            index === 0 ? "none" : "1px solid #EEEAE3",
+                        }}
+                      >
+                        <div className="flex justify-between gap-3">
+                          <div className="min-w-0">
+                            <p
+                              style={{
+                                margin: 0,
+                                fontSize: "14px",
+                                fontWeight: 850,
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              {summary.name}
+                            </p>
+                            <p
+                              style={{
+                                margin: "3px 0 0",
+                                color: "#918A82",
+                                fontSize: "10.5px",
+                              }}
+                            >
+                              {summary.completed}/{summary.total} complete
+                              {summary.overdue > 0
+                                ? ` · ${summary.overdue} overdue`
+                                : ""}
+                            </p>
+                          </div>
+                          <strong
+                            style={{
+                              fontSize: "11.5px",
+                              fontWeight: 900,
+                            }}
+                          >
+                            {summary.averagePercent === null
+                              ? "—"
+                              : `${Math.round(summary.averagePercent)}%`}
+                          </strong>
+                        </div>
+
+                        <div
+                          style={{
+                            height: "7px",
+                            marginTop: "9px",
+                            borderRadius: "999px",
+                            overflow: "hidden",
+                            background: "#ECE9E2",
+                          }}
+                        >
+                          <motion.div
+                            initial={{ width: 0 }}
+                            animate={{
+                              width: `${Math.round(summary.completionRate)}%`,
+                            }}
+                            transition={{
+                              duration: 0.7,
+                              delay: index * 0.04,
+                            }}
+                            style={{
+                              height: "100%",
+                              borderRadius: "999px",
+                              background: "#FFD500",
+                            }}
+                          />
+                        </div>
+                      </motion.div>
+                    ))}
+                  </div>
+                </section>
+              </motion.div>
+            )}
           </>
         )}
       </div>
 
+      {/* Keep original assessment dialog/functionality */}
       <Dialog open={addOpen} onOpenChange={setAddOpen}>
         <DialogContent
           className="max-w-sm max-h-[85vh] overflow-y-auto"
@@ -1249,83 +2379,12 @@ export function ProgressPage({ onNavigate }: ProgressPageProps) {
                 !form.dueDate
               }
             >
-              {savingAssessment
-                ? "Saving..."
-                : "Add Assessment"}
+              {savingAssessment ? "Saving..." : "Add Assessment"}
             </Button>
           </div>
         </DialogContent>
       </Dialog>
     </div>
-  );
-}
-
-function MetricCard({
-  label,
-  value,
-  caption,
-  variant,
-  icon,
-}: {
-  label: string;
-  value: string;
-  caption: string;
-  variant: "yellow" | "green" | "coral" | "purple";
-  icon: React.ReactNode;
-}) {
-  const styles = {
-    yellow: {
-      background: "linear-gradient(135deg,#FFF5B8,#FFE661)",
-      iconBg: "rgba(255,255,255,.52)",
-      iconColor: "#876B00",
-    },
-    green: {
-      background: "linear-gradient(135deg,#E8F8EE,#CFF0DB)",
-      iconBg: "rgba(255,255,255,.55)",
-      iconColor: "#287A48",
-    },
-    coral: {
-      background: "linear-gradient(135deg,#FFE9E5,#FFD0C7)",
-      iconBg: "rgba(255,255,255,.55)",
-      iconColor: "#B44D42",
-    },
-    purple: {
-      background: "linear-gradient(135deg,#F1EAFF,#DDD0FF)",
-      iconBg: "rgba(255,255,255,.55)",
-      iconColor: "#7357B8",
-    },
-  }[variant];
-
-  return (
-    <motion.div whileHover={{ y: -2 }}>
-      <Card
-        className="border-0 p-4"
-        style={{
-          borderRadius: "19px",
-          background: styles.background,
-          boxShadow: "0 8px 20px rgba(0,0,0,.05)",
-        }}
-      >
-        <div
-          className="w-9 h-9 rounded-xl flex items-center justify-center mb-3"
-          style={{
-            background: styles.iconBg,
-            color: styles.iconColor,
-          }}
-        >
-          {icon}
-        </div>
-        <p className="m-0 text-[11px] font-bold uppercase tracking-wide text-black/55">
-          {label}
-        </p>
-        <p className="m-0 mt-1 text-[28px] font-extrabold leading-none">
-          {value}
-        </p>
-        <p className="m-0 mt-2 text-[11px] text-black/55">
-          {caption}
-        </p>
-      </Card>
-    </motion.div>
   );
 }
 

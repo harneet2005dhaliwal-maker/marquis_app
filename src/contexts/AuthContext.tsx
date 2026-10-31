@@ -24,6 +24,8 @@ interface AuthContextValue {
   user: SessionUser | null;
 
   googleProviderToken: string | null;
+  googleIdentityLinked: boolean;
+  isConnectingGoogle: boolean;
 
   login: (
     email: string,
@@ -31,12 +33,27 @@ interface AuthContextValue {
     role: UserType
   ) => Promise<void>;
 
+  connectGoogleClassroom: () => Promise<void>;
   logout: () => Promise<void>;
   refreshSession: () => Promise<void>;
 }
 
 const AuthContext =
   createContext<AuthContextValue | undefined>(undefined);
+
+const CLASSROOM_SCOPES = [
+  "openid",
+  "email",
+  "profile",
+
+  "https://www.googleapis.com/auth/classroom.courses.readonly",
+
+  "https://www.googleapis.com/auth/classroom.coursework.me.readonly",
+  "https://www.googleapis.com/auth/classroom.student-submissions.me.readonly",
+
+  "https://www.googleapis.com/auth/classroom.coursework.students.readonly",
+  "https://www.googleapis.com/auth/classroom.student-submissions.students.readonly",
+].join(" ");
 
 export const AuthProvider: React.FC<{
   children: React.ReactNode;
@@ -60,6 +77,16 @@ export const AuthProvider: React.FC<{
     googleProviderToken,
     setGoogleProviderToken,
   ] = useState<string | null>(null);
+
+  const [
+    googleIdentityLinked,
+    setGoogleIdentityLinked,
+  ] = useState(false);
+
+  const [
+    isConnectingGoogle,
+    setIsConnectingGoogle,
+  ] = useState(false);
 
   const applyUser = (
     nextUser: SessionUser | null
@@ -125,12 +152,36 @@ export const AuthProvider: React.FC<{
     });
   };
 
+  const refreshGoogleIdentityState = async () => {
+    const {
+      data,
+      error,
+    } = await supabase.auth.getUserIdentities();
+
+    if (error) {
+      console.error(
+        "Could not read linked identities:",
+        error
+      );
+      setGoogleIdentityLinked(false);
+      return false;
+    }
+
+    const linked = (data?.identities ?? []).some(
+      (identity) => identity.provider === "google"
+    );
+
+    setGoogleIdentityLinked(linked);
+    return linked;
+  };
+
   const processSession = async (
     session: any
   ) => {
     if (!session?.user) {
       applyUser(null);
       setGoogleProviderToken(null);
+      setGoogleIdentityLinked(false);
       return;
     }
 
@@ -144,6 +195,8 @@ export const AuthProvider: React.FC<{
         true
       );
     } else {
+      // An email/password Supabase session does not automatically
+      // contain a Google provider access token.
       setGoogleProviderToken(null);
 
       console.log(
@@ -156,13 +209,16 @@ export const AuthProvider: React.FC<{
       session.user.id,
       session.user.email
     );
+
+    await refreshGoogleIdentityState();
   };
 
   const refreshSession = async () => {
     const {
       data: { session },
       error,
-    } = await supabase.auth.getSession();
+    } =
+      await supabase.auth.getSession();
 
     if (error) {
       console.error(
@@ -172,6 +228,7 @@ export const AuthProvider: React.FC<{
 
       applyUser(null);
       setGoogleProviderToken(null);
+      setGoogleIdentityLinked(false);
       return;
     }
 
@@ -194,6 +251,7 @@ export const AuthProvider: React.FC<{
         if (isMounted) {
           applyUser(null);
           setGoogleProviderToken(null);
+          setGoogleIdentityLinked(false);
         }
       } finally {
         if (isMounted) {
@@ -227,10 +285,12 @@ export const AuthProvider: React.FC<{
             if (isMounted) {
               applyUser(null);
               setGoogleProviderToken(null);
+              setGoogleIdentityLinked(false);
             }
           } finally {
             if (isMounted) {
               setIsLoading(false);
+              setIsConnectingGoogle(false);
             }
           }
         }
@@ -288,6 +348,89 @@ export const AuthProvider: React.FC<{
       data.user.id,
       data.user.email
     );
+
+    await refreshGoogleIdentityState();
+  };
+
+  const connectGoogleClassroom = async () => {
+    setIsConnectingGoogle(true);
+
+    try {
+      const {
+        data: { user: authUser },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError || !authUser) {
+        throw new Error(
+          "Please sign in to Marquis before connecting Google Classroom."
+        );
+      }
+
+      const {
+        data: identityData,
+        error: identitiesError,
+      } = await supabase.auth.getUserIdentities();
+
+      if (identitiesError) {
+        throw identitiesError;
+      }
+
+      const alreadyLinked =
+        (identityData?.identities ?? []).some(
+          (identity) => identity.provider === "google"
+        );
+
+      const options = {
+        redirectTo: `${window.location.origin}/`,
+        scopes: CLASSROOM_SCOPES,
+        queryParams: {
+          access_type: "offline",
+          prompt: "consent",
+        },
+      };
+
+      if (alreadyLinked) {
+        // The Google identity is already part of this Marquis account.
+        // Run Google OAuth again to obtain a fresh provider token with
+        // the Classroom scopes required by the app.
+        const { error } =
+          await supabase.auth.signInWithOAuth({
+            provider: "google",
+            options,
+          });
+
+        if (error) {
+          throw error;
+        }
+
+        return;
+      }
+
+      // First-time connection: attach Google to the user who is
+      // already authenticated with Marquis email/password.
+      const { error } =
+        await supabase.auth.linkIdentity({
+          provider: "google",
+          options,
+        });
+
+      if (error) {
+        throw error;
+      }
+    } catch (error) {
+      setIsConnectingGoogle(false);
+      console.error(
+        "Google Classroom connection failed:",
+        error
+      );
+
+      throw new Error(
+        error instanceof Error
+          ? error.message
+          : "Unable to connect Google Classroom."
+      );
+    }
   };
 
   const logout = async () => {
@@ -305,6 +448,8 @@ export const AuthProvider: React.FC<{
 
     applyUser(null);
     setGoogleProviderToken(null);
+    setGoogleIdentityLinked(false);
+    setIsConnectingGoogle(false);
   };
 
   return (
@@ -316,7 +461,10 @@ export const AuthProvider: React.FC<{
         studentId,
         user,
         googleProviderToken,
+        googleIdentityLinked,
+        isConnectingGoogle,
         login,
+        connectGoogleClassroom,
         logout,
         refreshSession,
       }}
